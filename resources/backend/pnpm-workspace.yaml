@@ -1,0 +1,9 @@
+﻿packages: []
+nodeLinker: hoisted
+allowBuilds:
+  node-pty: true
+  koffi: true
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  protobufjs: false
+

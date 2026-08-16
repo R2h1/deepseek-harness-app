@@ -1,0 +1,25 @@
+{
+  "name": "dsh-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ElectroBun desktop shell for the DeepSeek Harness Web GUI",
+  "scripts": {
+    "start": "electrobun run",
+    "dev": "electrobun dev",
+    "dev:watch": "electrobun dev --watch",
+    "build:dev": "bun install && electrobun build",
+    "build:canary": "electrobun build --env=canary",
+    "build:stable": "electrobun build --env=stable",
+    "gen:icons": "bun scripts/gen-icons.mjs",
+    "backend:provision": "node scripts/provision-backend.mjs",
+    "backend:pin": "node scripts/provision-backend.mjs --version",
+    "backend:check": "node scripts/check-backend-version.mjs"
+  },
+  "dependencies": {
+    "electrobun": "^1.18.1"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/bun": "latest"
+  }
+}

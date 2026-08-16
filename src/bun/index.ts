@@ -1,0 +1,287 @@
+/**
+ * DSH Desktop — ElectroBun main process.
+ *
+ * The shell supervises the real DeepSeek Harness backend (`dsh web`):
+ *  - acquires the single-instance lock,
+ *  - shows a branded loader window immediately,
+ *  - spawns the backend with an OS-assigned port (`--port 0`) and discovers the
+ *    served URL from the `dsh web: http://127.0.0.1:<port>` stdout line,
+ *  - swaps the loader for the real GUI once the backend is ready,
+ *  - keeps the app alive in the system tray when the window closes,
+ *  - and tears the backend process tree down on quit.
+ *
+ * The dsh product itself is never modified: it still runs on Node with its own
+ * native addons; this Bun process only starts, watches, and stops it.
+ */
+import { BrowserWindow, Screen, Tray, Utils } from "electrobun/bun";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+import { info, error, warn } from "./logger";
+import { acquireSingleInstance } from "./single-instance";
+import {
+  consumeLines,
+  killProcessTree,
+  parseUrlLine,
+  readBundledVersion,
+  resolveBackendSpec,
+  spawnBackend,
+  type BackendSpec,
+} from "./backend";
+import { errorHtml, loaderHtml } from "./loader-ui";
+
+const WINDOW_WIDTH = 1280;
+const WINDOW_HEIGHT = 800;
+const READY_TIMEOUT_MS = 120_000;
+
+let mainWindow: BrowserWindow | null = null;
+let backendProc: Bun.Subprocess | null = null;
+let backendUrl: string | null = null;
+let quitting = false;
+let trayAvailable = false;
+let notifiedCloseToTray = false;
+
+/** App version, read from the bundle's version.json (dev falls back to a constant). */
+function appVersion(): string {
+  try {
+    const raw = readFileSync(resolve(process.cwd(), "../Resources/version.json"), "utf8");
+    const parsed = JSON.parse(raw) as { version?: unknown };
+    if (typeof parsed.version === "string") return parsed.version;
+  } catch {
+    // dev run — fall through to the constant below
+  }
+  return "0.1.0";
+}
+
+/** Center the window on the primary display's work area. */
+function centerFrame(): { x: number; y: number; width: number; height: number } {
+  try {
+    const work = Screen.getPrimaryDisplay().workArea;
+    if (work.width >= WINDOW_WIDTH && work.height >= WINDOW_HEIGHT) {
+      return {
+        x: work.x + Math.floor((work.width - WINDOW_WIDTH) / 2),
+        y: work.y + Math.floor((work.height - WINDOW_HEIGHT) / 2),
+        width: WINDOW_WIDTH,
+        height: WINDOW_HEIGHT,
+      };
+    }
+  } catch {
+    // fall through to the default top-left position
+  }
+  return { x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
+}
+
+/** Create (or reuse) the main window. Loads the GUI URL when the backend is ready, else the loader. */
+function ensureWindow(): BrowserWindow {
+  if (mainWindow) return mainWindow;
+  const frame = centerFrame();
+  const win = new BrowserWindow({
+    title: "DeepSeek Harness",
+    frame,
+    url: backendUrl,
+    html: backendUrl
+      ? null
+      : loaderHtml({ appVersion: appVersion(), backendVersion: readBundledVersion() }),
+    sandbox: true,
+  });
+  mainWindow = win;
+  win.on("close", () => {
+    info("main window closed; app stays in the tray");
+    mainWindow = null;
+    if (!notifiedCloseToTray) {
+      notifiedCloseToTray = true;
+      try {
+        Utils.showNotification({
+          title: "DeepSeek Harness 仍在运行",
+          body: "窗口已关闭，引擎仍在后台运行。可点击系统托盘图标重新打开。",
+          silent: true,
+        });
+      } catch {
+        // notifications are best-effort
+      }
+    }
+    if (!trayAvailable) shutdownAndQuit();
+  });
+  return win;
+}
+
+function showMainWindow(): void {
+  const win = ensureWindow();
+  win.show();
+  win.activate();
+}
+
+function showErrorPage(message: string): void {
+  error(message);
+  const win = ensureWindow();
+  win.webview.loadHTML(errorHtml({ message, appVersion: appVersion() }));
+}
+
+function openGui(url: string): void {
+  const win = ensureWindow();
+  win.webview.loadURL(url);
+  win.setTitle("DeepSeek Harness");
+  info(`GUI loaded at ${url}`);
+}
+
+/** The tray icon path: bundled app asset first, project asset in dev. */
+function resolveTrayIcon(): string {
+  const candidates = [
+    join(resolve(process.cwd(), "../Resources/app"), "tray.png"),
+    join(process.cwd(), "resources", "icons", "tray.png"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return "";
+}
+
+async function stopBackend(): Promise<void> {
+  const proc = backendProc;
+  backendProc = null;
+  if (proc) await killProcessTree(proc);
+}
+
+function shutdownAndQuit(): void {
+  if (quitting) return;
+  quitting = true;
+  info("quitting: tearing down backend");
+  void stopBackend().finally(() => Utils.quit());
+}
+
+async function restartBackend(): Promise<void> {
+  info("restarting backend");
+  await stopBackend();
+  backendUrl = null;
+  const win = ensureWindow();
+  win.webview.loadHTML(
+    loaderHtml({ appVersion: appVersion(), backendVersion: readBundledVersion() }),
+  );
+  void startBackendAndBoot();
+}
+
+function setupTray(): void {
+  let tray: Tray;
+  try {
+    tray = new Tray({
+      title: "DeepSeek Harness",
+      image: resolveTrayIcon(),
+      template: true,
+      width: 16,
+      height: 16,
+    });
+  } catch (err) {
+    warn(`system tray unavailable: ${String(err)}`);
+    return;
+  }
+  trayAvailable = true;
+
+  tray.setMenu([
+    { type: "normal", label: "打开 DeepSeek Harness", action: "show" },
+    { type: "divider" },
+    { type: "normal", label: "在浏览器中打开", action: "open-browser" },
+    { type: "normal", label: "重新启动引擎", action: "restart" },
+    { type: "divider" },
+    { type: "normal", label: "退出", action: "quit" },
+  ]);
+
+  tray.on("tray-clicked", (event) => {
+    const data = (event as { data?: { action?: unknown } }).data;
+    const action = typeof data?.action === "string" ? data.action : undefined;
+    switch (action) {
+      case "show":
+        showMainWindow();
+        break;
+      case "open-browser":
+        if (backendUrl) {
+          Utils.openExternal(backendUrl);
+        } else {
+          warn("tray open-browser: backend not ready yet");
+        }
+        break;
+      case "restart":
+        void restartBackend();
+        break;
+      case "quit":
+        shutdownAndQuit();
+        break;
+      default:
+        // a plain tray-icon click (no menu action) brings the window back
+        showMainWindow();
+    }
+  });
+}
+
+async function startBackendAndBoot(): Promise<void> {
+  let spec: BackendSpec;
+  try {
+    spec = resolveBackendSpec();
+  } catch (err) {
+    showErrorPage(`无法解析后端启动方式：${String(err)}`);
+    return;
+  }
+
+  let proc: Bun.Subprocess;
+  try {
+    proc = spawnBackend(spec);
+  } catch (err) {
+    showErrorPage(`无法启动 DeepSeek Harness 引擎：${String(err)}`);
+    return;
+  }
+  backendProc = proc;
+
+  let becameReady = false;
+  proc.exited.then((code) => {
+    if (quitting) return;
+    error(`backend exited with code ${code}`);
+    if (!becameReady && !backendUrl) {
+      showErrorPage(
+        `DeepSeek Harness 引擎意外退出（exit code ${code}），服务未能启动。\n可通过系统托盘「重新启动引擎」重试。`,
+      );
+    }
+  });
+
+  const onStdout = (line: string) => {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) info(`backend: ${trimmed}`);
+    const url = parseUrlLine(line);
+    if (url && !becameReady) {
+      becameReady = true;
+      backendUrl = url;
+      openGui(url);
+    }
+  };
+  const onStderr = (line: string) => {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) info(`backend/stderr: ${trimmed}`);
+  };
+
+  if (proc.stdout instanceof ReadableStream) {
+    void consumeLines(proc.stdout, onStdout);
+  }
+  if (proc.stderr instanceof ReadableStream) {
+    void consumeLines(proc.stderr, onStderr);
+  }
+
+  setTimeout(() => {
+    if (!becameReady && !quitting) {
+      showErrorPage(
+        `引擎在 ${Math.floor(READY_TIMEOUT_MS / 1000)}s 内未能就绪。\n请检查网络与本地配置，或通过系统托盘重新启动引擎。`,
+      );
+    }
+  }, READY_TIMEOUT_MS);
+}
+
+function main(): void {
+  if (!acquireSingleInstance()) {
+    console.log("DeepSeek Harness 已在运行，本实例将退出。");
+    process.exit(0);
+  }
+
+  info(`=== DeepSeek Harness desktop ${appVersion()} starting (pid ${process.pid}) ===`);
+  setupTray();
+  ensureWindow();
+  void startBackendAndBoot();
+}
+
+main();

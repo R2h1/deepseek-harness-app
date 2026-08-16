@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# electrobun build outputs
+build/
+artifacts/
+.electrobun-cache/
+
+# provisioned backend runtime (build artifacts — regenerate with `pnpm backend:provision`)
+resources/backend/node_modules/
+resources/backend/pnpm-lock.yaml
+resources/node/
+
+# logs & misc
+*.log
+.DS_Store
+Thumbs.db
