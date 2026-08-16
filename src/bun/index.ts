@@ -109,8 +109,8 @@ function ensureWindow(): BrowserWindow {
       notifiedCloseToTray = true;
       try {
         Utils.showNotification({
-          title: "DeepSeek Harness 仍在运行",
-          body: "窗口已关闭，引擎仍在后台运行。可点击系统托盘图标重新打开。",
+          title: "DeepSeek Harness is still running",
+          body: "The window is closed, but the engine keeps running in the background. Click the tray icon to reopen.",
           silent: true,
         });
       } catch {
@@ -141,11 +141,13 @@ function openGui(url: string): void {
   info(`GUI loaded at ${url}`);
 }
 
-/** The tray icon path: bundled app asset first, project asset in dev. */
+/** The tray icon path: bundled app asset first, project asset in dev. Windows
+ *  tray needs an .ico; macOS uses a PNG template. */
 function resolveTrayIcon(): string {
+  const name = process.platform === "win32" ? "tray.ico" : "tray.png";
   const candidates = [
-    join(resolve(process.cwd(), "../Resources/app"), "tray.png"),
-    join(process.cwd(), "resources", "icons", "tray.png"),
+    join(resolve(process.cwd(), "../Resources/app"), name),
+    join(process.cwd(), "resources", "icons", name),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
@@ -194,13 +196,15 @@ function setupTray(): void {
   trayAvailable = true;
 
   tray.setMenu([
-    { type: "normal", label: "打开 DeepSeek Harness", action: "show" },
+    // English labels: electrobun 1.18.1's native Windows tray menu decodes
+    // non-ASCII text with the ANSI codepage, which garbles CJK.
+    { type: "normal", label: "Open DeepSeek Harness", action: "show" },
     { type: "divider" },
-    { type: "normal", label: "在浏览器中打开", action: "open-browser" },
-    { type: "normal", label: "重新启动引擎", action: "restart" },
-    { type: "normal", label: "检查并更新引擎", action: "update-engine" },
+    { type: "normal", label: "Open in Browser", action: "open-browser" },
+    { type: "normal", label: "Restart Engine", action: "restart" },
+    { type: "normal", label: "Check for Updates", action: "update-engine" },
     { type: "divider" },
-    { type: "normal", label: "退出", action: "quit" },
+    { type: "normal", label: "Quit", action: "quit" },
   ]);
 
   tray.on("tray-clicked", (event) => {
@@ -346,7 +350,7 @@ async function checkAndUpdateEngine(): Promise<void> {
   const activeVersion = active ? readVersion(active.dir) : null;
   if (!latest) {
     try {
-      Utils.showNotification({ title: "DeepSeek Harness", body: "无法连接到更新服务器。", silent: true });
+      Utils.showNotification({ title: "DeepSeek Harness", body: "Could not reach the update server.", silent: true });
     } catch {
       // notifications are best-effort
     }
@@ -354,7 +358,7 @@ async function checkAndUpdateEngine(): Promise<void> {
   }
   if (latest === activeVersion) {
     try {
-      Utils.showNotification({ title: "DeepSeek Harness", body: `引擎已是最新版本（${latest}）。`, silent: true });
+      Utils.showNotification({ title: "DeepSeek Harness", body: `Engine is up to date (${latest}).`, silent: true });
     } catch {
       // notifications are best-effort
     }
@@ -368,7 +372,7 @@ async function checkAndUpdateEngine(): Promise<void> {
   try {
     Utils.showNotification({
       title: "DeepSeek Harness",
-      body: updated ? `引擎已更新到 ${latest}，正在重启…` : "引擎更新失败，正在使用现有引擎。",
+      body: updated ? `Engine updated to ${latest}; restarting…` : "Engine update failed; using the existing engine.",
       silent: !updated,
     });
   } catch {

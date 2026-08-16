@@ -24,8 +24,9 @@ export default {
       "resources/node": "node",
       // A bundled pnpm CLI so the app can install the latest backend at runtime.
       "resources/pnpm": "pnpm",
-      // Tray icon (PNG) and app icon (ICO for Windows packaging).
+      // Tray icon (PNG for macOS, ICO for Windows) and app icon (Windows).
       "resources/icons/tray.png": "tray.png",
+      "resources/icons/tray.ico": "tray.ico",
       // The backend trim script, so runtime-installed backends get pruned too.
       "scripts/trim-node-modules.mjs": "trim-node-modules.mjs",
     },
