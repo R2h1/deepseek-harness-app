@@ -78,19 +78,24 @@ npm 上的最新版并安装到 `%LOCALAPPDATA%\dsh-desktop\backend`；重新执
 ## 打包
 
 ```sh
-pnpm build:stable      # 产出 artifacts/ 下的构建产物 + Setup.zip（Setup.exe + .installer）
-pnpm build:installer   # 一步产出单文件安装程序：artifacts/DeepSeek Harness-Setup.exe
+pnpm build:stable      # 产出 artifacts/ 下的构建产物 + Setup.zip
+pnpm build:installer   # 产出图形化 NSIS 安装程序：artifacts/DeepSeek Harness-Installer.exe
+pnpm build:portable    # 产出单文件自解压包：artifacts/DeepSeek Harness-Setup.exe
 ```
+
+`build:installer` 需要 [NSIS](https://nsis.sourceforge.io)（`makensis`；可用
+`DSHP_NSIS_MAKENSIS` 指定路径，或加入 PATH）。
 
 macOS 构建必须在 macOS 上进行（ElectroBun 面向当前机器系统构建）。
 
 ## 分发给他人
 
-**首选：单文件安装程序** `artifacts/DeepSeek Harness-Setup.exe`（约 91MB）。
+**首选：图形化安装程序** `artifacts/DeepSeek Harness-Installer.exe`（约 79MB）。
 
-1. 把**这一个 exe** 发给对方，双击即可。
-2. 它自动解压安装到 `%LOCALAPPDATA%\ai.deepseek.dsh-desktop\stable\app`，并创建
-   桌面和开始菜单快捷方式（首次解压约 466MB，需一两分钟）。
+1. 把**这一个 exe** 发给对方，双击即出现标准 Windows 安装向导：欢迎页 → 选择安装目录 →
+   进度条 → 完成（勾选"运行 DeepSeek Harness"）。
+2. 默认安装到 `%LOCALAPPDATA%\Programs\DeepSeek Harness`（免管理员），创建桌面和开始菜单
+   快捷方式，并注册"应用和功能"里的卸载项（带 `Uninstall.exe`）。
 3. 对方的机器需要：
    - Windows 10/11（系统自带 WebView2 运行时；很老的系统可能缺，需要装
      [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)）。
@@ -99,8 +104,8 @@ macOS 构建必须在 macOS 上进行（ElectroBun 面向当前机器系统构�
 4. 首次启动会自动检查并安装最新引擎（在线约 200MB 下载；离线直接用内置引擎）。
 5. 安装包未签名，Windows SmartScreen 可能提示"已保护你的电脑"——点"更多信息 → 仍要运行"即可。
 
-> 备用：`stable-win-x64-DeepSeekHarness-Setup.zip` 是原始分发包（`Setup.exe` + `.installer`
-> 载荷，需解压后一起使用），`build:installer` 已把载荷内嵌进 exe，日常分发用单文件即可。
+> 备用：`build:portable` 产出单文件自解压包（`DeepSeek Harness-Setup.exe`，无向导）；
+> `build:stable` 的 zip 是原始分发包（需解压）。日常分发用图形化安装程序。
 
 ## 已知限制
 
