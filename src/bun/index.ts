@@ -23,11 +23,14 @@ import {
   consumeLines,
   killProcessTree,
   parseUrlLine,
-  readBundledVersion,
+  readActiveVersion,
+  preferredBackendDir,
+  readVersion,
   resolveBackendSpec,
   spawnBackend,
   type BackendSpec,
 } from "./backend";
+import { installBackend, queryNpmLatest } from "./updater";
 import { errorHtml, loaderHtml } from "./loader-ui";
 
 const WINDOW_WIDTH = 1280;
@@ -81,7 +84,7 @@ function ensureWindow(): BrowserWindow {
     url: backendUrl,
     html: backendUrl
       ? null
-      : loaderHtml({ appVersion: appVersion(), backendVersion: readBundledVersion() }),
+      : loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion() }),
     sandbox: true,
   });
   mainWindow = win;
@@ -155,7 +158,7 @@ async function restartBackend(): Promise<void> {
   backendUrl = null;
   const win = ensureWindow();
   win.webview.loadHTML(
-    loaderHtml({ appVersion: appVersion(), backendVersion: readBundledVersion() }),
+    loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion() }),
   );
   void startBackendAndBoot();
 }
@@ -181,6 +184,7 @@ function setupTray(): void {
     { type: "divider" },
     { type: "normal", label: "在浏览器中打开", action: "open-browser" },
     { type: "normal", label: "重新启动引擎", action: "restart" },
+    { type: "normal", label: "检查并更新引擎", action: "update-engine" },
     { type: "divider" },
     { type: "normal", label: "退出", action: "quit" },
   ]);
@@ -201,6 +205,9 @@ function setupTray(): void {
         break;
       case "restart":
         void restartBackend();
+        break;
+      case "update-engine":
+        void checkAndUpdateEngine();
         break;
       case "quit":
         shutdownAndQuit();
@@ -280,7 +287,86 @@ function main(): void {
 
   info(`=== DeepSeek Harness desktop ${appVersion()} starting (pid ${process.pid}) ===`);
   setupTray();
-  ensureWindow();
+  void boot();
+}
+
+/**
+ * Boot sequence: show the loader, check npm for a newer backend and install it
+ * into the user-data directory when one exists, then start the backend (which
+ * resolves through the same user-data-first order).
+ */
+async function boot(): Promise<void> {
+  const win = ensureWindow();
+  const renderLoader = (status: string): void => {
+    if (!mainWindow) return;
+    try {
+      mainWindow.webview.loadHTML(
+        loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion(), status }),
+      );
+    } catch (err) {
+      warn(`loader render failed: ${String(err)}`);
+    }
+  };
+
+  renderLoader("正在检查引擎更新…");
+  const latest = await queryNpmLatest();
+  const active = preferredBackendDir();
+  const activeVersion = active ? readVersion(active.dir) : null;
+
+  if (latest && latest !== activeVersion) {
+    info(`backend update available: ${activeVersion ?? "none"} -> ${latest}`);
+    const updated = await installBackend(latest, renderLoader);
+    if (!updated) {
+      warn("backend update failed; booting the existing backend");
+    }
+  } else if (latest === activeVersion) {
+    info(`backend is up to date (${latest})`);
+  }
+
+  renderLoader("正在启动引擎…");
+  void startBackendAndBoot();
+}
+
+/** Tray action: check for a newer backend and, when found, install and restart. */
+async function checkAndUpdateEngine(): Promise<void> {
+  const latest = await queryNpmLatest();
+  const active = preferredBackendDir();
+  const activeVersion = active ? readVersion(active.dir) : null;
+  if (!latest) {
+    try {
+      Utils.showNotification({ title: "DeepSeek Harness", body: "无法连接到更新服务器。", silent: true });
+    } catch {
+      // notifications are best-effort
+    }
+    return;
+  }
+  if (latest === activeVersion) {
+    try {
+      Utils.showNotification({ title: "DeepSeek Harness", body: `引擎已是最新版本（${latest}）。`, silent: true });
+    } catch {
+      // notifications are best-effort
+    }
+    return;
+  }
+
+  // Stop the running backend first: it may itself be using the user-data
+  // backend directory, and installing into a locked node_modules would fail.
+  await stopBackend();
+  const updated = await installBackend(latest, () => {});
+  try {
+    Utils.showNotification({
+      title: "DeepSeek Harness",
+      body: updated ? `引擎已更新到 ${latest}，正在重启…` : "引擎更新失败，正在使用现有引擎。",
+      silent: !updated,
+    });
+  } catch {
+    // notifications are best-effort
+  }
+  backendUrl = null;
+  const win = ensureWindow();
+  win.webview.loadHTML(
+    loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion(), status: "正在启动引擎…" }),
+  );
   void startBackendAndBoot();
 }
 

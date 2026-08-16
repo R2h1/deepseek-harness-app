@@ -10,6 +10,8 @@ artifacts/
 resources/backend/node_modules/
 resources/backend/pnpm-lock.yaml
 resources/node/
+resources/pnpm/node_modules/
+resources/pnpm/pnpm-lock.yaml
 
 # logs & misc
 *.log

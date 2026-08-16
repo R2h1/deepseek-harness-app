@@ -1,0 +1,4 @@
+packages: []
+minimumReleaseAgeExclude:
+  - pnpm@11.22.0
+nodeLinker: hoisted

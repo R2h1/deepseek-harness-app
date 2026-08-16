@@ -1,4 +1,4 @@
-﻿packages: []
+packages: []
 nodeLinker: hoisted
 allowBuilds:
   node-pty: true
@@ -6,4 +6,3 @@ allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   '@google/genai': false
   protobufjs: false
-

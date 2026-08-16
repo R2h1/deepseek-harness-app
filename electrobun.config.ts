@@ -22,6 +22,8 @@ export default {
       "resources/backend": "backend",
       // A bundled Node runtime for the backend. Lands in <app>/Resources/app/node.
       "resources/node": "node",
+      // A bundled pnpm CLI so the app can install the latest backend at runtime.
+      "resources/pnpm": "pnpm",
       // Tray icon (PNG) and app icon (ICO for Windows packaging).
       "resources/icons/tray.png": "tray.png",
     },

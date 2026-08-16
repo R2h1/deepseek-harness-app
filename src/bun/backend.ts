@@ -7,18 +7,21 @@
  * settles (we ask for an OS-assigned port with `--port 0`, so there is never a
  * fixed-port collision with an already-running harness).
  *
- * Resolution order:
- *  1. `resources/backend` bundled with the app (provisioned by
- *     `pnpm backend:provision` from the latest `@deepseek-ai/dsh` on npm) and a
- *     bundled Node runtime at `resources/node`.
- *  2. A local `deepseek-harness` checkout (`DSH_DESKTOP_DEV_BACKEND` or a
- *     sibling `../deepseek-harness`) for development.
- *  3. `npx --yes @deepseek-ai/dsh web` as a last-resort external fallback.
+ * Active-backend resolution order:
+ *  1. `DSH_DESKTOP_BACKEND_DIR` (explicit override)
+ *  2. the user-data backend (`%LOCALAPPDATA%\dsh-desktop\backend`) — the
+ *     runtime self-update target populated by `updater.ts` whenever a newer
+ *     `@deepseek-ai/dsh` exists on npm
+ *  3. `resources/backend` bundled with the app (provisioned by
+ *     `pnpm backend:provision`), which is the offline fallback
+ *  4. a local `deepseek-harness` checkout (`DSH_DESKTOP_DEV_BACKEND` or a
+ *     sibling `../deepseek-harness`) for development
+ *  5. `npx --yes @deepseek-ai/dsh web` as a last-resort external fallback
  */
 import { spawn } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { info, error } from "./logger";
+import { info, error, userDataDir } from "./logger";
 
 export const URL_PREFIX = "dsh web: ";
 
@@ -38,7 +41,7 @@ export interface BackendSpec {
 }
 
 /** The app code folder in a bundled app: the Bun process runs from `<app>/bin`. */
-function appCodeDir(): string {
+export function appCodeDir(): string {
   return resolve(process.cwd(), "../Resources/app");
 }
 
@@ -48,22 +51,44 @@ export function bundledBackendDir(): string | null {
   return existsSync(join(dir, BUNDLED_BACKEND_ENTRY)) ? dir : null;
 }
 
+/** The runtime self-update backend directory under the user-data folder. */
+export function userDataBackendDir(): string {
+  return join(userDataDir(), "backend");
+}
+
 /** The bundled Node runtime, when present. */
 export function bundledNode(): string | null {
   const candidate = join(appCodeDir(), "node", NODE_BINARY);
   return existsSync(candidate) ? candidate : null;
 }
 
-/** The version recorded by `pnpm backend:provision`, when the backend is bundled. */
-export function readBundledVersion(): string | null {
-  const dir = bundledBackendDir();
-  if (!dir) return null;
+/** The Node executable the shell uses to run the backend. */
+export function nodeBin(): string {
+  return process.env.DSH_DESKTOP_NODE?.trim() || bundledNode() || "node";
+}
+
+/** Read the VERSION marker of a backend directory, if present. */
+export function readVersion(dir: string): string | null {
   try {
     const raw = readFileSync(join(dir, "VERSION"), "utf8").trim();
     return raw.length > 0 ? raw : null;
   } catch {
     return null;
   }
+}
+
+/** The bundled backend version, when it was provisioned. */
+export function readBundledVersion(): string | null {
+  const dir = bundledBackendDir();
+  return dir ? readVersion(dir) : null;
+}
+
+function isSourceCheckout(dir: string): boolean {
+  return existsSync(join(dir, "apps/cli/src/bin.ts"));
+}
+
+function isInstalledBackend(dir: string): boolean {
+  return existsSync(join(dir, BUNDLED_BACKEND_ENTRY));
 }
 
 /** A local deepseek-harness checkout used for development. */
@@ -74,37 +99,41 @@ function devSourceDir(): string | null {
     resolve(process.cwd(), "../deepseek-harness"),
   ];
   for (const dir of candidates) {
-    if (existsSync(join(dir, "apps/cli/src/bin.ts"))) return dir;
+    if (isSourceCheckout(dir)) return dir;
   }
   return null;
 }
 
-/** Resolve how this shell should launch the backend, best source first. */
-export function resolveBackendSpec(): BackendSpec {
+/** The currently active backend directory (user-data → bundled → source), if any. */
+export function preferredBackendDir(): { dir: string; kind: BackendKind } | null {
+  const env = process.env.DSH_DESKTOP_BACKEND_DIR?.trim();
+  const candidates: { dir: string; kind: BackendKind }[] = [];
+  if (env) candidates.push({ dir: env, kind: "bundled" });
+  candidates.push({ dir: userDataBackendDir(), kind: "bundled" });
   const bundled = bundledBackendDir();
-  if (bundled) {
-    const node = process.env.DSH_DESKTOP_NODE?.trim() || bundledNode() || "node";
-    info(`backend: using bundled backend at ${bundled}`);
-    return {
-      node,
-      args: [
-        "--expose-internals",
-        BUNDLED_BACKEND_ENTRY,
-        "web",
-        "--port",
-        "0",
-      ],
-      cwd: bundled,
-      kind: "bundled",
-    };
-  }
-
+  if (bundled) candidates.push({ dir: bundled, kind: "bundled" });
   const source = devSourceDir();
-  if (source) {
-    const node = process.env.DSH_DESKTOP_NODE?.trim() || "node";
-    info(`backend: using source checkout at ${source}`);
+  if (source) candidates.push({ dir: source, kind: "source" });
+  for (const candidate of candidates) {
+    const valid = candidate.kind === "source"
+      ? isSourceCheckout(candidate.dir)
+      : isInstalledBackend(candidate.dir);
+    if (valid) return candidate;
+  }
+  return null;
+}
+
+/** The active backend version (user-data first, then bundled), for display. */
+export function readActiveVersion(): string | null {
+  const preferred = preferredBackendDir();
+  return preferred ? readVersion(preferred.dir) : null;
+}
+
+/** Build the launch command for a resolved backend directory. */
+export function makeSpec(dir: string): BackendSpec {
+  if (isSourceCheckout(dir)) {
     return {
-      node,
+      node: nodeBin(),
       args: [
         "--expose-internals",
         "--import",
@@ -114,12 +143,28 @@ export function resolveBackendSpec(): BackendSpec {
         "--port",
         "0",
       ],
-      cwd: source,
+      cwd: dir,
       kind: "source",
     };
   }
+  return {
+    node: nodeBin(),
+    args: ["--expose-internals", BUNDLED_BACKEND_ENTRY, "web", "--port", "0"],
+    cwd: dir,
+    kind: "bundled",
+  };
+}
 
-  info("backend: no bundled backend or checkout found; falling back to npx @deepseek-ai/dsh");
+/** Resolve how this shell should launch the backend, best source first. */
+export function resolveBackendSpec(): BackendSpec {
+  const preferred = preferredBackendDir();
+  if (preferred) {
+    info(
+      `backend: using ${preferred.kind} backend at ${preferred.dir} (v${readVersion(preferred.dir) ?? "?"})`,
+    );
+    return makeSpec(preferred.dir);
+  }
+  info("backend: no bundled, user-data, or checkout backend found; falling back to npx @deepseek-ai/dsh");
   return {
     node: "npx",
     args: ["--yes", "@deepseek-ai/dsh", "web", "--port", "0"],

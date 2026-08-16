@@ -114,6 +114,26 @@ if (existsSync(icuSource)) {
   console.log("Copied icudtl.dat (Node ICU data)");
 }
 
+// 4. Bundle the pnpm CLI so the app can install the latest backend at runtime
+//    (self-update) without needing a system package manager.
+const pnpmDir = join(root, "resources", "pnpm");
+mkdirSync(pnpmDir, { recursive: true });
+writeFileSync(
+  join(pnpmDir, "package.json"),
+  JSON.stringify(
+    {
+      name: "dsh-desktop-pnpm",
+      private: true,
+      dependencies: { pnpm: "11.22.0" },
+    },
+    null,
+    2,
+  ) + "\n",
+);
+writeFileSync(join(pnpmDir, "pnpm-workspace.yaml"), "packages: []\nnodeLinker: hoisted\n");
+run("pnpm install", pnpmDir);
+console.log("Bundled pnpm CLI for runtime self-updates");
+
 console.log("\nDone. Rebuild the app so the bundled backend is packaged:");
 console.log("  pnpm build:stable   (production installer)");
 console.log("  pnpm backend:check  (compare bundled vs the latest @deepseek-ai/dsh)");

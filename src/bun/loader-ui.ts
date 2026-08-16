@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Loader and error page HTML for the desktop shell, rendered in the main
  * window while the dsh web backend boots. Self-contained (inline styles and
  * script) so it works through BrowserWindow.loadHTML on every webview.
@@ -11,6 +11,8 @@ const WHALE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88
 export interface LoaderOptions {
   appVersion: string;
   backendVersion: string | null;
+  /** Optional status line shown next to the spinner (e.g. update progress). */
+  status?: string;
 }
 
 export function loaderHtml(opts: LoaderOptions): string {
@@ -55,7 +57,7 @@ export function loaderHtml(opts: LoaderOptions): string {
     <div class="logo">${WHALE_SVG}</div>
     <h1>DeepSeek Harness</h1>
     <p class="subtitle">桌面端 · 本地运行</p>
-    <div class="status"><span class="dot"></span><span id="status">正在启动本地引擎</span><span id="elapsed"></span></div>
+    <div class="status"><span class="dot"></span><span id="status">${opts.status ?? "正在启动本地引擎"}</span><span id="elapsed"></span></div>
     <div class="progress"><div class="bar"></div></div>
   </main>
   <footer class="footer">DeepSeek Harness ${escapeHtml(opts.appVersion)} · ${backend}</footer>

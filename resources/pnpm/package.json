@@ -1,0 +1,7 @@
+{
+  "name": "dsh-desktop-pnpm",
+  "private": true,
+  "dependencies": {
+    "pnpm": "11.22.0"
+  }
+}
