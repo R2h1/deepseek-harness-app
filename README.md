@@ -83,6 +83,20 @@ pnpm build:stable     # 产出 artifacts/ 下的 win-x64 安装包
 
 macOS 构建必须在 macOS 上进行（ElectroBun 面向当前机器系统构建）。
 
+## 分发给他人
+
+1. 把 `artifacts/stable-win-x64-DeepSeekHarness-Setup.zip` 发给对方。
+2. 对方**解压 zip**（`Setup.exe` 和旁边的 `.installer` 文件夹要保持在一起），双击
+   `DeepSeek Harness-Setup.exe` → 自动安装到 `%LOCALAPPDATA%\ai.deepseek.dsh-desktop\stable\app`
+   并启动（首次解压约 466MB，需一两分钟）。
+3. 对方的机器需要：
+   - Windows 10/11（系统自带 WebView2 运行时；很老的系统可能缺，需要装
+     [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)）。
+   - 自己的 `DEEPSEEK_API_KEY`：在应用界面里按引导配置（设置 → 模型/提供商），或设置同名
+     环境变量。程序本身完全自包含，不需要装 Node / npm / pnpm。
+4. 首次启动会自动检查并安装最新引擎（在线约 200MB 下载；离线直接用内置引擎）。
+5. 安装包未签名，Windows SmartScreen 可能提示"已保护你的电脑"——点"更多信息 → 仍要运行"即可。
+
 ## 已知限制
 
 - 关闭主窗口后应用驻留托盘；如系统托盘创建失败，关闭窗口会直接退出。
