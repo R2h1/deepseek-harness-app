@@ -74,6 +74,22 @@ function centerFrame(): { x: number; y: number; width: number; height: number } 
   return { x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
 }
 
+/** Encode the loader page as a data: URL with an explicit UTF-8 charset. */
+function loaderUrl(status?: string): string {
+  const html = loaderHtml({
+    appVersion: appVersion(),
+    backendVersion: readActiveVersion(),
+    status,
+  });
+  return "data:text/html;charset=utf-8," + encodeURIComponent(html);
+}
+
+/** Encode the error page as a data: URL with an explicit UTF-8 charset. */
+function errorUrl(message: string): string {
+  const html = errorHtml({ message, appVersion: appVersion() });
+  return "data:text/html;charset=utf-8," + encodeURIComponent(html);
+}
+
 /** Create (or reuse) the main window. Loads the GUI URL when the backend is ready, else the loader. */
 function ensureWindow(): BrowserWindow {
   if (mainWindow) return mainWindow;
@@ -81,10 +97,8 @@ function ensureWindow(): BrowserWindow {
   const win = new BrowserWindow({
     title: "DeepSeek Harness",
     frame,
-    url: backendUrl,
-    html: backendUrl
-      ? null
-      : loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion() }),
+    url: backendUrl ?? loaderUrl(),
+    html: null,
     sandbox: true,
   });
   mainWindow = win;
@@ -117,7 +131,7 @@ function showMainWindow(): void {
 function showErrorPage(message: string): void {
   error(message);
   const win = ensureWindow();
-  win.webview.loadHTML(errorHtml({ message, appVersion: appVersion() }));
+  win.webview.loadURL(errorUrl(message));
 }
 
 function openGui(url: string): void {
@@ -157,9 +171,7 @@ async function restartBackend(): Promise<void> {
   await stopBackend();
   backendUrl = null;
   const win = ensureWindow();
-  win.webview.loadHTML(
-    loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion() }),
-  );
+  win.webview.loadURL(loaderUrl());
   void startBackendAndBoot();
 }
 
@@ -169,7 +181,9 @@ function setupTray(): void {
     tray = new Tray({
       title: "DeepSeek Harness",
       image: resolveTrayIcon(),
-      template: true,
+      // template (monochrome) is a macOS-only concept; a color PNG shows blank
+      // on Windows if template is set.
+      template: process.platform === "darwin",
       width: 16,
       height: 16,
     });
@@ -300,9 +314,7 @@ async function boot(): Promise<void> {
   const renderLoader = (status: string): void => {
     if (!mainWindow) return;
     try {
-      mainWindow.webview.loadHTML(
-        loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion(), status }),
-      );
+      mainWindow.webview.loadURL(loaderUrl(status));
     } catch (err) {
       warn(`loader render failed: ${String(err)}`);
     }
@@ -364,9 +376,7 @@ async function checkAndUpdateEngine(): Promise<void> {
   }
   backendUrl = null;
   const win = ensureWindow();
-  win.webview.loadHTML(
-    loaderHtml({ appVersion: appVersion(), backendVersion: readActiveVersion(), status: "正在启动引擎…" }),
-  );
+  win.webview.loadURL(loaderUrl("正在启动引擎…"));
   void startBackendAndBoot();
 }
 

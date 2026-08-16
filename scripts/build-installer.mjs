@@ -75,6 +75,27 @@ if (!existsSync(join(stagingDir, "bin", "launcher.exe"))) {
   throw new Error("staged app is missing bin/launcher.exe; the payload looks wrong");
 }
 
+// 2b. Embed the app icon into the packaged binaries. The electrobun CLI's own
+//     rcedit integration can't resolve from its bundled runtime, so we run the
+//     icon edit ourselves on the staged exes.
+const rceditCandidates = [
+  process.env.DSHP_RCEDIT,
+  join(root, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
+  join(root, "node_modules", "rcedit", "bin", "rcedit.exe"),
+];
+const rcedit = rceditCandidates.find((c) => c && existsSync(c));
+const appIcon = join(root, "resources", "icons", "app.ico");
+if (rcedit) {
+  for (const rel of ["bin/launcher.exe", "bin/bun.exe"]) {
+    const target = join(stagingDir, rel);
+    if (existsSync(target)) {
+      run(`"${rcedit}" "${target}" --set-icon "${appIcon}"`, root);
+    }
+  }
+} else {
+  console.warn("rcedit not found; app binaries will ship without an embedded icon");
+}
+
 // 3. Compile the NSIS installer.
 run(`"${findMakensis()}" installer.nsi`, scriptsDir);
 

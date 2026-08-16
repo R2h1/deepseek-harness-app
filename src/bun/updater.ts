@@ -128,6 +128,22 @@ export async function installBackend(
       return false;
     }
 
+    // Prune never-at-runtime files (types, sourcemaps, docs, tests) so the
+    // installed backend stays compact, mirroring `pnpm backend:provision`.
+    const trimScript = join(appCodeDir(), "trim-node-modules.mjs");
+    if (existsSync(join(dir, "node_modules")) && existsSync(trimScript)) {
+      const trim = spawn([nodeBin(), trimScript, join(dir, "node_modules")], {
+        cwd: dir,
+        stdout: "ignore",
+        stderr: "ignore",
+        env: process.env,
+      });
+      const trimCode = await trim.exited;
+      if (trimCode !== 0) {
+        warn(`runtime update: backend trim exited with code ${trimCode}`);
+      }
+    }
+
     const manifestPath = join(dir, "node_modules", "@deepseek-ai", "dsh", "package.json");
     if (!existsSync(manifestPath)) {
       error("runtime update: install finished but @deepseek-ai/dsh was not resolved");

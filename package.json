@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "rcedit": "^5.0.2"
   }
 }

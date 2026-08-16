@@ -78,6 +78,10 @@ writeFileSync(
 
 run("pnpm install", backendDir);
 
+// 2. Prune never-at-runtime files (types, sourcemaps, docs, tests) for a much
+//    smaller, faster-to-install backend.
+run(`node ${join(root, "scripts", "trim-node-modules.mjs")} "${join(backendDir, "node_modules")}"`, root);
+
 // 2. Record the resolved version for display and update checks.
 const dshManifestPath = join(backendDir, "node_modules", "@deepseek-ai", "dsh", "package.json");
 if (!existsSync(dshManifestPath)) {

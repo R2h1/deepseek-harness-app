@@ -26,6 +26,8 @@ export default {
       "resources/pnpm": "pnpm",
       // Tray icon (PNG) and app icon (ICO for Windows packaging).
       "resources/icons/tray.png": "tray.png",
+      // The backend trim script, so runtime-installed backends get pruned too.
+      "scripts/trim-node-modules.mjs": "trim-node-modules.mjs",
     },
     win: {
       icon: "resources/icons/app.ico",
