@@ -1,15 +1,18 @@
-; DeepSeek Harness — NSIS graphical installer (Modern UI 2).
+﻿; DeepSeek Harness — NSIS 3.x (Unicode) graphical installer (Modern UI 2).
 ;
-; Produces a classic Windows wizard installer: welcome -> install directory ->
-; progress -> finish (with "Run DeepSeek Harness"). Installs per-user, creates
-; Desktop + Start Menu shortcuts, an uninstall entry, and the DPI-awareness
-; AppCompat flag that keeps the WebView2 UI crisp on scaled displays.
+; Produces a classic Windows wizard installer with a Simplified-Chinese UI:
+; welcome -> install directory -> progress -> finish (with "Run"). Installs
+; per-user, creates Desktop + Start Menu shortcuts, an uninstall entry, and
+; the DPI-awareness AppCompat flag that keeps the WebView2 UI crisp on scaled
+; displays.
 ;
-; NOTE: installer UI text is English because the bundled NSIS is the ANSI
-; (2.x) build, which cannot encode CJK correctly on all Windows locales. A
-; Chinese installer needs NSIS 3.x (Unicode) or Inno Setup 6.
+; Requires NSIS 3.x (Unicode): the old ANSI (2.x) makensis cannot encode CJK.
+; This script is saved as UTF-8 with a BOM so NSIS 3 reads the Chinese strings
+; correctly.
 ;
-; Build with: makensis installer.nsi  (after `pnpm build:stable`)
+; Build with: "…\nsis-3.10\makensis.exe" installer.nsi  (after `pnpm build:stable`)
+
+Unicode true
 
 !include "MUI2.nsh"
 
@@ -30,16 +33,30 @@ SetCompressor /SOLID lzma
 !define MUI_ICON "..\resources\icons\app.ico"
 !define MUI_UNICON "..\resources\icons\app.ico"
 
+; Chinese welcome/finish copy (SimpChinese). The rest of the wizard text comes
+; from MUI_LANGUAGE "SimpChinese" below.
+!define MUI_WELCOMEPAGE_TITLE "欢迎使用 DeepSeek Harness 安装向导"
+!define MUI_WELCOMEPAGE_TEXT "本向导将引导您完成 DeepSeek Harness 的安装。$\r$\n$\r$\n点击「下一步」继续。"
+!define MUI_FINISHPAGE_TITLE "安装完成"
+!define MUI_FINISHPAGE_TEXT "DeepSeek Harness 已成功安装到您的计算机。$\r$\n$\r$\n点击「完成」退出安装向导。"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
+
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+
+; NOTE: section names MUST stay ASCII (English). On machines with aggressive
+; security software (Lenovo/Huorong, AlibabaProtect), a Chinese-language
+; installer that also embeds Chinese SECTION NAMES ("主程序"/"卸载") gets flagged
+; as a suspicious bundle installer and its output is wiped right after install
+; (verified empirically: only the section names trigger it; the Chinese wizard
+; text/UI is fine). Keep these two names in English.
 
 Section "Main" SecMain
   SetOutPath "$INSTDIR"

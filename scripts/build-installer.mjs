@@ -35,6 +35,9 @@ function run(command, cwd) {
 function findMakensis() {
   const candidates = [
     process.env.DSHP_NSIS_MAKENSIS,
+    // NSIS 3.x (Unicode) — required for the Simplified-Chinese installer UI.
+    // Downloaded to dshtools; prefer it over the bundled NSIS 2.x (ANSI).
+    "D:\\conan\\dshtools\\nsis-3.10\\nsis-3.10\\makensis.exe",
     "D:\\conan\\dshtools\\tools\\makensis.exe",
   ].filter(Boolean);
   for (const candidate of candidates) {
@@ -49,7 +52,7 @@ function findMakensis() {
     // not on PATH — report below
   }
   throw new Error(
-    "makensis not found. Install NSIS and set DSHP_NSIS_MAKENSIS to makensis.exe (or add it to PATH).",
+    "makensis not found. Install NSIS 3.x (Unicode) and set DSHP_NSIS_MAKENSIS to makensis.exe (or add it to PATH).",
   );
 }
 
