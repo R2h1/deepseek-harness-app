@@ -14,6 +14,7 @@
  * native addons; this Bun process only starts, watches, and stops it.
  */
 import { BrowserWindow, Screen, Tray, Utils } from "electrobun/bun";
+import { dlopen, FFIType, type Pointer } from "bun:ffi";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -102,6 +103,7 @@ function ensureWindow(): BrowserWindow {
     sandbox: true,
   });
   mainWindow = win;
+  setupWindowIcon();
   win.on("close", () => {
     info("main window closed; app stays in the tray");
     mainWindow = null;
@@ -153,6 +155,88 @@ function resolveTrayIcon(): string {
     if (existsSync(candidate)) return candidate;
   }
   return "";
+}
+
+/** The app icon (.ico) for the native window title bar / taskbar: bundled
+ *  `Resources/app.ico` in production, `resources/icons/app.ico` in dev. */
+function resolveAppIconPath(): string {
+  const candidates = [
+    join(resolve(process.cwd(), "../Resources"), "app.ico"),
+    join(process.cwd(), "resources", "icons", "app.ico"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return "";
+}
+
+/**
+ * electrobun's BrowserWindow has no icon option and registers its window class
+ * without an icon, so on Windows the title bar falls back to a generic icon
+ * (the DeepSeek logo stays invisible even though it is embedded in bun.exe).
+ *
+ * Fix: set the window icon ourselves via user32 — LoadImageW the app.ico and
+ * send WM_SETICON (ICON_BIG + ICON_SMALL) to the window — which is exactly what
+ * WM_SETICON-based window icon APIs do. Windows-only, best-effort.
+ *
+ * Strings are passed to the W APIs as UTF-16LE Buffers (typed `pointer`): bun:ffi
+ * CString-as-arg is unreliable on Windows in current Bun, and W functions need
+ * UTF-16 anyway.
+ */
+function setupWindowIcon(): void {
+  if (process.platform !== "win32") return;
+
+  const lib = {
+    FindWindowW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+    LoadImageW: {
+      args: [FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.i32, FFIType.i32, FFIType.u32],
+      returns: FFIType.ptr,
+    },
+    SendMessageW: { args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+  } as const;
+
+  let user32: ReturnType<typeof dlopen<typeof lib>> | null = null;
+  try {
+    user32 = dlopen("user32.dll", lib);
+  } catch (err) {
+    warn(`window icon: user32 unavailable: ${String(err)}`);
+    return;
+  }
+
+  const iconPath = resolveAppIconPath();
+  if (!iconPath) {
+    warn("window icon: app.ico not found; title bar keeps the default icon");
+    return;
+  }
+
+  /** UTF-16LE NUL-terminated buffer for the W-API string parameters. */
+  const wide = (s: string): Buffer => Buffer.from(`${s}\0`, "utf16le");
+
+  /** @returns whether the window was found and the icon applied. */
+  const apply = (): boolean => {
+    const hwnd = user32!.symbols.FindWindowW(0 as Pointer, wide("DeepSeek Harness") as unknown as Pointer);
+    if (!hwnd) return false;
+    const icoPath = wide(iconPath) as unknown as Pointer;
+    const big = user32!.symbols.LoadImageW(0 as Pointer, icoPath, 1 /* IMAGE_ICON */, 32, 32, 0x10 /* LR_LOADFROMFILE */);
+    const small = user32!.symbols.LoadImageW(0 as Pointer, icoPath, 1, 16, 16, 0x10);
+    if (big) user32!.symbols.SendMessageW(hwnd, 0x0080 /* WM_SETICON */, 1 as Pointer /* ICON_BIG */, big);
+    if (small) user32!.symbols.SendMessageW(hwnd, 0x0080, 0 as Pointer /* ICON_SMALL */, small);
+    return true;
+  };
+
+  try {
+    if (!apply()) {
+      // The native window is created synchronously by `new BrowserWindow`, so the
+      // HWND is normally findable immediately; retry briefly just in case.
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries += 1;
+        if (apply() || tries >= 20) clearInterval(timer);
+      }, 50);
+    }
+  } catch (err) {
+    warn(`window icon: ${String(err)}`);
+  }
 }
 
 async function stopBackend(): Promise<void> {
