@@ -12,6 +12,7 @@
     "build:stable": "electrobun build --env=stable",
     "build:installer": "node scripts/build-installer.mjs",
     "build:portable": "electrobun build --env=stable && node scripts/embed-installer.mjs",
+    "publish:release": "node scripts/publish-release.mjs",
     "gen:icons": "bun scripts/gen-icons.mjs",
     "backend:provision": "node scripts/provision-backend.mjs",
     "backend:pin": "node scripts/provision-backend.mjs --version",

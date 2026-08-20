@@ -86,6 +86,23 @@ pnpm build:portable    # 产出单文件自解压包：artifacts/DeepSeek Harnes
 `build:installer` 需要 [NSIS](https://nsis.sourceforge.io)（`makensis`；可用
 `DSHP_NSIS_MAKENSIS` 指定路径，或加入 PATH）。
 
+## 发布（打 tag + release + 传安装包）
+
+```sh
+pnpm publish:release                     # tag v<package.json version> + release + 上传安装包
+pnpm publish:release -- --version 0.1.1  # 指定版本
+pnpm publish:release -- --update         # 更新已有 release 的标题/描述
+pnpm publish:release -- --draft          # 先建草稿，网页手动发布
+pnpm publish:release -- --notes NOTES.md # 自定义 release 描述（markdown）
+pnpm publish:release -- --dry-run        # 只打印计划，不改任何东西
+```
+
+- 自动解析 `git remote origin` 得到仓库，从 Git 凭据管理器取 token（或 `GH_TOKEN`）。
+- 描述默认是简体中文模板；所有文本以 UTF-8 直接走 REST API，不经过 shell，
+  不会再出现中文变 `?` 的问题。
+- 上传文件名固定为 `deepseek-harness-app-installer.exe`（同名旧资产会被覆盖）。
+- 完整说明：`node scripts/publish-release.mjs --help`。
+
 macOS 构建必须在 macOS 上进行（ElectroBun 面向当前机器系统构建）。
 
 ## 分发给他人
