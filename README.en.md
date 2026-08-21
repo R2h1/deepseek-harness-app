@@ -111,8 +111,8 @@ pnpm publish:release -- --dry-run        # print the plan, change nothing
 
 - Resolves the repo from `git remote origin` and takes the token from the Git credential
   manager (or `GH_TOKEN`).
-- The default body is a Simplified-Chinese template; all text goes over the REST API as
-  UTF-8 (never through a shell), so CJK never turns into `?`.
+- The default body is a **bilingual template (Chinese first, English below)**; all text
+  goes over the REST API as UTF-8 (never through a shell), so CJK never turns into `?`.
 - The uploaded filename is fixed to `deepseek-harness-app-installer.exe` (an existing
   asset with the same name is replaced).
 - Full docs: `node scripts/publish-release.mjs --help`.

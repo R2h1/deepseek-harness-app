@@ -100,8 +100,8 @@ pnpm publish:release -- --dry-run        # 只打印计划，不改任何东西
 ```
 
 - 自动解析 `git remote origin` 得到仓库，从 Git 凭据管理器取 token（或 `GH_TOKEN`）。
-- 描述默认是简体中文模板；所有文本以 UTF-8 直接走 REST API，不经过 shell，
-  不会再出现中文变 `?` 的问题。
+- 描述默认是**中英双语模板（中文在前、英文在后）**；所有文本以 UTF-8 直接走 REST API，
+  不经过 shell，不会再出现中文变 `?` 的问题。
 - 上传文件名固定为 `deepseek-harness-app-installer.exe`（同名旧资产会被覆盖）。
 - 完整说明：`node scripts/publish-release.mjs --help`。
 

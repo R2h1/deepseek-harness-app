@@ -234,16 +234,33 @@ const repo = getRepo(opts.repo);
 
 const defaultNotes = `## deepseek-harness-app ${tag}
 
+### 简体中文
+
 Windows 桌面版安装包（ElectroBun 外壳 + DeepSeek Harness Web GUI）。
 
-### 下载
+**下载**
 - **deepseek-harness-app-installer.exe** — 图形化安装向导（NSIS 3.x Unicode，简体中文界面）
 
-### 本版本
+**本版本**
 - ElectroBun 桌面外壳（Bun 主进程 + WebView2）
 - 自动拉取并托管 @deepseek-ai/dsh 后端引擎
-- 安装器：NSIS 3.x (Unicode) + 简体中文 UI，逐用户安装，桌面/开始菜单快捷方式，卸载入口
+- 安装器升级为 NSIS 3.x (Unicode) + 简体中文 UI，逐用户安装，桌面/开始菜单快捷方式，卸载入口
 - 安装脚本 section 名保持英文，避免安全软件误伤（Lenovo/Huorong、AlibabaProtect 环境下已验证）
+
+---
+
+### English
+
+Windows desktop installer (ElectroBun shell + DeepSeek Harness Web GUI).
+
+**Download**
+- **deepseek-harness-app-installer.exe** — graphical installer (NSIS 3.x Unicode, Simplified-Chinese UI)
+
+**This release**
+- ElectroBun desktop shell (Bun main process + WebView2)
+- Automatically fetches and hosts the @deepseek-ai/dsh backend engine
+- Installer upgraded to NSIS 3.x (Unicode) with a Simplified-Chinese UI: per-user install, desktop/Start Menu shortcuts, uninstall entry
+- Installer section names kept in English to avoid false positives from security software (verified under Lenovo/Huorong and AlibabaProtect)
 `;
 const releaseBody = opts.notes ? readFileSync(opts.notes, "utf8") : defaultNotes;
 const title = `deepseek-harness-app ${tag}`;
