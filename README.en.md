@@ -8,12 +8,16 @@ No more opening a terminal and running `dsh web` first: double-click the app, an
 starts the DeepSeek Harness engine in the background, opens the full GUI in a native
 window once the port is ready, and cleanly stops the engine on exit.
 
-Fully decoupled from the deepseek-harness repository: this app is only a shell around
-the engine. **The engine comes from the latest `@deepseek-ai/dsh` on npm** and still
-runs on Node.
+> This app is only a shell around the engine and is fully decoupled from the
+> deepseek-harness repository: **the engine comes from the latest `@deepseek-ai/dsh`
+> on npm** and still runs on Node.
+
+---
 
 ## Features
 
+- **Works out of the box**: double-click to launch — the engine starts in the
+  background and the GUI opens automatically, no terminal needed.
 - **Auto-tracks the latest engine**: on every launch it checks npm for the newest
   `@deepseek-ai/dsh` and, when a newer version exists, downloads and installs it into
   the user-data directory (bundled pnpm + Node) — the next launch uses the newest
@@ -25,15 +29,108 @@ runs on Node.
 - **Dynamic port**: starts with `dsh web --port 0` (OS-assigned port) and parses the
   real address from the `dsh web: http://…` output line — no more conflicts with a
   fixed 3080 port (e.g. another Harness already running).
-- **Startup loader page**: the window first shows a branded loader (with update
-  progress), then switches to the real GUI once the engine is ready.
-- **System tray**: open window / open in browser / restart engine / **check & update
-  engine** / quit; closing the window keeps the app in the tray and the engine running.
+- **Branded startup page**: the window first shows a loader (with update progress),
+  then switches to the real GUI once the engine is ready.
+- **System tray**: open window / open in browser / restart engine / check & update
+  engine / quit; closing the window keeps the app in the tray and the engine running.
 - **Single instance**: a named mutex on Windows (auto-released on process exit), a PID
   lock file on other platforms.
 - **Clean exit**: terminates the engine process tree with `taskkill /T` on quit.
 
-## Architecture
+---
+
+## Installation & Usage (users)
+
+### Download & install
+
+Download from [Releases](https://github.com/R2h1/deepseek-harness-app/releases):
+
+| Package | Description |
+|---|---|
+| `deepseek-harness-app-installer.exe` | **Recommended**: graphical install wizard (Simplified-Chinese UI). Installs by default to `%LOCALAPPDATA%\Programs\DeepSeek Harness`, creates Desktop/Start Menu shortcuts, registers an uninstall entry |
+| `DeepSeek Harness-Setup.exe` | Single-file self-extracting package (no wizard) |
+| `*.zip` | Raw distribution (needs extraction) |
+
+### First launch
+
+- On first launch the app checks npm and installs the latest engine (~200 MB online
+  download; offline it uses the bundled engine directly).
+- Requires Windows 10/11 (WebView2 runtime built in; very old systems may need
+  [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)).
+
+### Configure your API key
+
+- Configure it in the app UI (Settings → models/providers), or set the environment
+  variable `DEEPSEEK_API_KEY`.
+- The program is fully self-contained — no Node / npm / pnpm install required.
+
+### Daily use
+
+- **System tray**: open window / open in browser / restart engine / **check & update
+  engine** / quit; closing the window keeps the app in the tray and the engine running.
+- **Engine auto-track**: on each launch the app checks npm and installs the latest
+  engine into the user-data directory — no manual repackaging needed.
+- **Uninstall**: Settings → Apps → DeepSeek Harness → Uninstall (or run
+  `Uninstall.exe` in the install directory).
+
+### Data & sessions
+
+- Your conversations live on disk at `~/.dsh/sessions/` (per project).
+- **None of the tray actions** (open window / open in browser / restart engine / check
+  for updates) delete sessions; after a restart or update, sessions reload from disk.
+- ⚠️ The only caveat: **an in-flight reply** is interrupted if you restart or update
+  the engine at that moment (the unfinished part is lost; everything already completed
+  stays).
+- Uninstalling **does not delete** `~/.dsh` — your sessions and config are kept; delete
+  that directory manually to fully clean up.
+- To back up or migrate: just copy the whole `~/.dsh` directory.
+
+### Notes & FAQ
+
+- **Antivirus false positives**: on machines with Lenovo/Huorong or AlibabaProtect,
+  installed files were once automatically wiped right after install — the installer
+  now uses English section names to avoid it. If your files still get removed, add the
+  installer/install directory to the whitelist.
+- **Engine follows `latest` only**: only the npm `latest` tag is auto-installed;
+  pre-releases (`next`, e.g. rc.8) are not auto-installed until they are promoted to
+  `latest`, which the next launch picks up automatically.
+- **SmartScreen prompt**: the installer is unsigned; on first run click
+  "More info → Run anyway".
+- **First launch is slow**: it downloads the latest engine online (~200 MB, network
+  dependent).
+
+### Known limitations
+
+- Closing the main window keeps the app in the tray; if the tray fails to create,
+  closing the window exits the app instead.
+- macOS uses WKWebView (Safari engine); the dsh frontend behavior has not been verified
+  in that environment.
+- The shell's own update (ElectroBun `Updater` / bsdiff delta) is not wired up yet —
+  the engine version already tracks automatically.
+
+---
+
+## Development (developers)
+
+### Prerequisites
+
+- [Bun](https://bun.sh) (build/dev toolchain)
+- Windows 10/11 (Edge WebView2 runtime, preinstalled); macOS/Linux builds are supported
+  but not verified
+- Using the models requires a `DEEPSEEK_API_KEY` (reuses your `~/.dsh` and `.env`)
+
+### Quick start
+
+```sh
+bun install
+bun start          # run the built app (or bun dev: build and run)
+bun run dev:watch  # auto-rebuild on changes
+```
+
+In dev mode the backend boots from the adjacent `../deepseek-harness` source checkout
+(equivalent to `node --import tsx/esm apps/cli/src/bin.ts web --port 0`) for fast iteration.
+
+### Architecture
 
 ```
 DSH Desktop (ElectroBun)
@@ -46,25 +143,7 @@ DSH Desktop (ElectroBun)
   └─ Backend (unmodified): @deepseek-ai/dsh web, running on Node + its native addons
 ```
 
-## Requirements
-
-- [Bun](https://bun.sh) (build/dev toolchain)
-- Windows 10/11 (Edge WebView2 runtime, preinstalled); macOS/Linux builds are supported
-  but not verified
-- Using the models requires a `DEEPSEEK_API_KEY` (reuses your `~/.dsh` and `.env`)
-
-## Development
-
-```sh
-bun install
-bun start          # run the built app (or bun dev: build and run)
-bun run dev:watch  # auto-rebuild on changes
-```
-
-In dev mode the backend boots from the adjacent `../deepseek-harness` source checkout
-(equivalent to `node --import tsx/esm apps/cli/src/bin.ts web --port 0`) for fast iteration.
-
-## Configuration (environment variables)
+### Configuration (environment variables)
 
 | Variable | Default | Description |
 |---|---|---|
@@ -73,7 +152,7 @@ In dev mode the backend boots from the adjacent `../deepseek-harness` source che
 | `DSH_DESKTOP_DEV_BACKEND` | `../deepseek-harness` | dev source checkout path |
 | `DSH_DESKTOP_USER_DATA` | `%LOCALAPPDATA%\dsh-desktop` etc. | logs and single-instance lock dir |
 
-## Bundled backend (offline fallback)
+### Bundled backend (offline fallback)
 
 ```sh
 pnpm backend:provision   # install the latest @deepseek-ai/dsh into resources/backend, plus Node + pnpm
@@ -87,7 +166,7 @@ needed for daily use**: on launch the app checks npm for the latest version and 
 it to `%LOCALAPPDATA%\dsh-desktop\backend`; re-running `backend:provision` only refreshes
 this offline fallback (e.g. when distributing to offline machines).
 
-## Packaging
+### Packaging
 
 ```sh
 pnpm build:stable      # build artifacts/ output + Setup.zip
@@ -96,9 +175,10 @@ pnpm build:portable    # single-file self-extracting package: artifacts/DeepSeek
 ```
 
 `build:installer` requires [NSIS](https://nsis.sourceforge.io) (`makensis`; set
-`DSHP_NSIS_MAKENSIS` to the path, or add it to PATH).
+`DSHP_NSIS_MAKENSIS` to the path, or add it to PATH). macOS builds must be produced on
+macOS (ElectroBun builds for the current machine).
 
-## Publishing (tag + release + upload)
+### Publishing (tag + release + upload)
 
 ```sh
 pnpm publish:release                     # tag v<package.json version> + release + upload installer
@@ -116,41 +196,3 @@ pnpm publish:release -- --dry-run        # print the plan, change nothing
 - The uploaded filename is fixed to `deepseek-harness-app-installer.exe` (an existing
   asset with the same name is replaced).
 - Full docs: `node scripts/publish-release.mjs --help`.
-
-macOS builds must be produced on macOS (ElectroBun builds for the current machine).
-
-## Distributing to others
-
-**Preferred: the graphical installer** `artifacts/DeepSeek Harness-Installer.exe`
-(~79 MB).
-
-1. Send that **single exe**; double-clicking opens a standard Windows install wizard:
-   welcome → choose directory → progress → finish (with "Run DeepSeek Harness").
-2. Installs by default to `%LOCALAPPDATA%\Programs\DeepSeek Harness` (no admin), creates
-   Desktop and Start Menu shortcuts, and registers an entry in "Apps & features" (with
-   `Uninstall.exe`).
-3. The target machine needs:
-   - Windows 10/11 (WebView2 runtime built in; very old systems may need
-     [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)).
-   - Its own `DEEPSEEK_API_KEY`: configure it in the app UI (Settings → models/providers),
-     or set the same-named environment variable. The program is fully self-contained —
-     no Node / npm / pnpm install required.
-4. On first launch it automatically checks and installs the latest engine (~200 MB online
-   download; offline uses the bundled engine).
-5. The installer is unsigned, so Windows SmartScreen may show "Windows protected your PC" —
-   click "More info → Run anyway".
-
-> Alternative: `build:portable` produces a single-file self-extracting package
-> (`DeepSeek Harness-Setup.exe`, no wizard); `build:stable`'s zip is the raw distribution
-> (requires extraction). For daily distribution use the graphical installer.
-
-## Known limitations
-
-- Closing the main window keeps the app in the tray; if the tray fails to create,
-  closing the window exits the app instead.
-- macOS uses WKWebView (Safari engine); the dsh frontend behavior has not been verified
-  in that environment.
-- The first update downloads and installs the latest engine (~200 MB, network
-  dependent), with progress shown on the loader page.
-- The shell's own update (ElectroBun `Updater` / bsdiff delta) is not wired up yet — the
-  engine version already tracks automatically, so the shell rarely needs updating.
