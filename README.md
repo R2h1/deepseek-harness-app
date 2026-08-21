@@ -1,5 +1,7 @@
 # DSH Desktop
 
+**简体中文** | [English](README.en.md)
+
 DeepSeek Harness 桌面端 —— 基于 [ElectroBun](https://electrobun.dev) 的原生桌面壳。
 
 不再需要先开终端跑 `dsh web`：双击应用，它自动在后台启动 DeepSeek Harness 引擎、
