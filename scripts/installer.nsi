@@ -17,7 +17,7 @@ Unicode true
 !include "MUI2.nsh"
 
 !define APP_NAME "DeepSeek Harness"
-!define APP_VERSION "0.1.1"
+!define APP_VERSION "0.1.2"
 !define APP_ID "ai.deepseek.dsh-desktop"
 !define APP_EXE "bin\launcher.exe"
 !define APP_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
