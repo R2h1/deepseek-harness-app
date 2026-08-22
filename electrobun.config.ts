@@ -4,7 +4,7 @@ export default {
   app: {
     name: "DeepSeek Harness",
     identifier: "ai.deepseek.dsh-desktop",
-    version: "0.1.0",
+    version: "0.1.1",
   },
   runtime: {
     // The tray owns the app lifecycle: closing the window keeps the app (and
