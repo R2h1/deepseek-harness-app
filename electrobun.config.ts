@@ -29,6 +29,9 @@ export default {
       "resources/icons/tray.ico": "tray.ico",
       // Mobile Access UI assets (vendored MIT QR library).
       "resources/mobile": "mobile",
+      // Windows helper: sets the AppUserModelID on the Start Menu shortcut so
+      // the taskbar/right-click app name is "DeepSeek Harness" (not "Bun").
+      "resources/win": "win",
       // The backend trim script, so runtime-installed backends get pruned too.
       "scripts/trim-node-modules.mjs": "trim-node-modules.mjs",
     },

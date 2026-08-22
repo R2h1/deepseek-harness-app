@@ -35,8 +35,8 @@ import { installBackend, queryNpmLatest } from "./updater";
 import { errorHtml, loaderHtml } from "./loader-ui";
 import { MobileAccessService } from "./mobile-access";
 
-const WINDOW_WIDTH = 1280;
-const WINDOW_HEIGHT = 800;
+const WINDOW_WIDTH = 1440;
+const WINDOW_HEIGHT = 900;
 const READY_TIMEOUT_MS = 120_000;
 
 let mainWindow: BrowserWindow | null = null;
@@ -193,6 +193,18 @@ function openMobileWindow(): void {
   win.show();
 }
 
+/** Resolve a bundled asset under Resources/app/<subdir> (prod) or resources/<subdir> (dev). */
+function resolveBundledAsset(subdir: string, name: string): string | null {
+  const candidates = [
+    join(resolve(process.cwd(), "../Resources/app"), subdir, name),
+    join(process.cwd(), "resources", subdir, name),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** The tray icon path: bundled app asset first, project asset in dev. Windows
  *  tray needs an .ico; macOS uses a PNG template. */
 function resolveTrayIcon(): string {
@@ -307,6 +319,39 @@ function setAppUserModelId(): void {
     );
   } catch (err) {
     warn(`app id: ${String(err)}`);
+  }
+}
+
+/**
+ * Ensure the Start Menu shortcut carries the AppUserModelID, so Windows
+ * associates the taskbar identity with "DeepSeek Harness". Runs the bundled
+ * set-aumid.exe helper (best-effort, idempotent). Covers manual copies and
+ * installer installs alike.
+ */
+function ensureShortcutAppUserModelId(): void {
+  if (process.platform !== "win32") return;
+  try {
+    const helper = resolveBundledAsset("win", "set-aumid.exe");
+    if (!helper) return;
+    const installDir = resolve(process.cwd(), "..");
+    const lnk = join(
+      process.env.APPDATA ?? "",
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "DeepSeek Harness",
+      "DeepSeek Harness.lnk",
+    );
+    const target = join(installDir, "bin", "launcher.exe");
+    void Bun.spawn(
+      [helper, lnk, target, "ai.deepseek.dsh-desktop", target, "0"],
+      { stdout: "ignore", stderr: "ignore" },
+    ).exited.then((code) => {
+      if (code !== 0) warn(`set-aumid helper exited ${code}`);
+    });
+  } catch (err) {
+    warn(`set-aumid helper: ${String(err)}`);
   }
 }
 
@@ -464,6 +509,7 @@ function main(): void {
   }
 
   setAppUserModelId();
+  ensureShortcutAppUserModelId();
   info(`=== DeepSeek Harness desktop ${appVersion()} starting (pid ${process.pid}) ===`);
   setupTray();
   void boot();
