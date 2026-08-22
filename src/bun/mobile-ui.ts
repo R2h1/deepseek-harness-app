@@ -34,6 +34,10 @@ export function mobileUiHtml(): string {
   .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; margin-left:6px; }
   .pill.on { background:#123d2c; color:var(--ok); }
   .pill.off { background:#3a1f1f; color:var(--err); }
+  .pinrow { display:flex; align-items:center; gap:8px; justify-content:center; margin:6px 0 10px; font-size:13px; }
+  .pinrow b { font-size:22px; letter-spacing:4px; color:var(--fg); }
+  .linkbtn { background:none; border:1px solid #333; color:var(--muted); border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; }
+  .linkbtn:hover { color:var(--fg); }
 </style>
 </head>
 <body>
@@ -51,8 +55,13 @@ export function mobileUiHtml(): string {
     <h2>公网（人在外面）<span class="pill" id="pubPill">…</span></h2>
     <div class="qrwrap" id="pubQr"><div class="status">公网访问将在下一阶段开放</div></div>
     <div class="url" id="pubUrl"></div>
+    <div class="pinrow" id="pinRow" style="display:none">
+      <span>访问 PIN：</span><b id="pinVal"></b>
+      <button class="linkbtn" id="pinRotate">重新生成</button>
+    </div>
     <button class="btn off" id="pubBtn">开启公网</button>
     <div class="status" id="pubState"></div>
+    <div class="warn">🔒 公网/IPv6 访问需要输入上面的 8 位 PIN。PIN 就是钥匙——不要泄露。</div>
   </div>
 
   <div class="warn">⚠️ 二维码和链接就是钥匙——<b>不要发给任何人</b>。它可以让对方直接操作你电脑上的 Harness（可执行代码）。同一 WiFi 下任何拿到链接的设备都能进入；关闭应用即停止访问。</div>
@@ -108,6 +117,11 @@ export function mobileUiHtml(): string {
     var cls = t.phase === 'error' ? 'err' : (t.phase === 'ready' ? 'ok' : '');
     $('pubState').textContent = st;
     $('pubState').className = 'status ' + cls;
+
+    // PIN (public access gate)
+    var pin = data.pin && data.pinEnabled ? data.pin : null;
+    $('pinRow').style.display = pin ? 'flex' : 'none';
+    if (pin) $('pinVal').textContent = pin;
   }
 
   function poll() {
@@ -118,6 +132,13 @@ export function mobileUiHtml(): string {
         $('lanQr').innerHTML = '<div class="status err">无法连接本地服务：' + e + '</div>';
       });
   }
+
+  $('pinRotate').addEventListener('click', function () {
+    fetch('/pin/rotate', { method: 'POST', cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j && j.pin) $('pinVal').textContent = j.pin; })
+      .catch(function () { /* best-effort */ });
+  });
 
   $('lanCopy').addEventListener('click', function () {
     var url = $('lanUrl').textContent;

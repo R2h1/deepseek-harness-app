@@ -161,15 +161,108 @@ async function forwardHttp(req: Request, url: URL, upstream: string, inject: str
   return new Response(upstreamRes.body, { status: upstreamRes.status, headers: upstreamRes.headers });
 }
 
-function createProxy(dshPort: number, platform: string, port: number): Server<WsData> {
+/* ------------------------------------------------------------------ */
+/* PIN auth for the public surface (IPv6 / tunnel)                     */
+/* ------------------------------------------------------------------ */
+
+const PIN_COOKIE = "dsh_mobile_pin";
+const PIN_PAGE_ROUTE = "/dsh-mobile-login";
+
+/** IPv6-mapped IPv4 (::ffff:a.b.c.d) appears when a dual-stack server sees an IPv4 client. */
+function normalizeRemoteAddress(address: string, family: string): { address: string; family: string } {
+  const m = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (m) return { address: m[1], family: "IPv4" };
+  return { address, family };
+}
+
+/** A connection is "public" (needs the PIN) unless it's a trusted local IPv4 address
+ *  (loopback / RFC1918 / link-local). IPv6 (global) is globally reachable, so gate it. */
+function isPublicRemote(remote: { address: string; family: string } | null): boolean {
+  if (!remote) return false;
+  const norm = normalizeRemoteAddress(remote.address, remote.family);
+  if (norm.family === "IPv4") {
+    return !/^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.)/.test(norm.address);
+  }
+  return true;
+}
+
+function hasValidAuth(req: Request, pin: string): boolean {
+  const cookie = req.headers.get("cookie") ?? "";
+  if (new RegExp(`(?:^|;)\\s*${PIN_COOKIE}=${pin}(?:;|$)`).test(cookie)) return true;
+  return new URL(req.url).searchParams.get("pin") === pin;
+}
+
+function isHtmlNavigation(req: Request): boolean {
+  return (req.headers.get("accept") ?? "").includes("text/html");
+}
+
+function loginPageHtml(error: boolean): string {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>访问验证</title><style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f1115;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.card{background:#1a1d24;border:1px solid #262a33;border-radius:12px;padding:28px 24px;max-width:320px;width:calc(100% - 48px);text-align:center;color:#e6e8ee}
+h1{font-size:16px;margin:0 0 6px}
+p{font-size:13px;color:#8a8f98;margin:0 0 16px}
+input{width:100%;box-sizing:border-box;padding:10px 12px;font-size:20px;letter-spacing:6px;text-align:center;border:1px solid #333;border-radius:8px;outline:none;background:#0f1115;color:#e6e8ee;margin-bottom:12px}
+button{width:100%;padding:10px;font-size:15px;background:#4f6ef7;color:#fff;border:none;border-radius:8px;cursor:pointer}
+.err{color:#f87171;font-size:12px;min-height:16px;margin-bottom:8px}
+</style></head><body><div class="card">
+<h1>🔐 DeepSeek Harness</h1>
+<p>此访问受 PIN 保护，请输入桌面端「手机访问」中显示的 8 位 PIN</p>
+<div class="err">${error ? "PIN 错误，请重试" : ""}</div>
+<form method="post" action="${PIN_PAGE_ROUTE}">
+<input name="pin" type="password" inputmode="numeric" maxlength="8" autocomplete="one-time-code" autofocus required>
+<button type="submit">进入</button>
+</form></div></body></html>`;
+}
+
+function createProxy(dshPort: number, platform: string, port: number, getPin: () => string | null): Server<WsData> {
   const upstream = `127.0.0.1:${dshPort}`;
   const inject = injectionScripts(platform);
 
   return Bun.serve<WsData>({
-    hostname: "0.0.0.0",
+    hostname: "::", // dual-stack: accept IPv4 (LAN) and IPv6 (global public) connections
     port,
     fetch(req, srv) {
       const url = new URL(req.url);
+      const host = req.headers.get("host") ?? "";
+      const pin = getPin();
+      const needsPin =
+        pin !== null && (host.toLowerCase().includes("trycloudflare.com") || isPublicRemote(srv.requestIP(req)));
+
+      // PIN login submission.
+      if (needsPin && req.method === "POST" && url.pathname === PIN_PAGE_ROUTE) {
+        return req.text().then((body) => {
+          const submitted = new URLSearchParams(body).get("pin") ?? "";
+          if (submitted === pin) {
+            return new Response(null, {
+              status: 302,
+              headers: {
+                location: "/",
+                "set-cookie": `${PIN_COOKIE}=${pin}; HttpOnly; SameSite=Lax; Path=/`,
+                "cache-control": "no-store",
+              },
+            });
+          }
+          return new Response(loginPageHtml(true), {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          });
+        });
+      }
+
+      // Gate the public surface: HTML navigations get the login page, others 401.
+      if (needsPin && !hasValidAuth(req, pin)) {
+        if (isHtmlNavigation(req)) {
+          return new Response(loginPageHtml(false), {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+        return new Response("unauthorized", { status: 401, headers: { "content-type": "text/plain; charset=utf-8" } });
+      }
+
       const wsUrl = `ws://${upstream}${url.pathname}${url.search}`;
       if (srv.upgrade(req, { data: { wsUrl } })) return undefined;
       return forwardHttp(req, url, upstream, inject);
@@ -246,6 +339,11 @@ function createStatusServer(service: MobileAccessService, port: number): Server<
         service.stopTunnel();
         return Response.json({ ok: true });
       }
+      // Rotate the public-access PIN (old phone sessions immediately invalidated).
+      if (req.method === "POST" && url.pathname === "/pin/rotate") {
+        const pin = service.rotatePin();
+        return Response.json({ pin });
+      }
       return new Response("not found", { status: 404 });
     },
   });
@@ -278,6 +376,7 @@ export interface MobileStatus {
   dshPort: number | null;
   tunnel: { running: boolean; url: string | null; phase: string; detail: string };
   pinEnabled: boolean;
+  pin: string | null;
 }
 
 export class MobileAccessService {
@@ -300,6 +399,22 @@ export class MobileAccessService {
     return join(this.tunnelCacheDir, "tunnel-auto.json");
   }
 
+  private pin: string | null = null;
+
+  getPin(): string | null {
+    return this.pin;
+  }
+
+  /** Rotate the public-access PIN (old phone sessions immediately invalidated). */
+  rotatePin(): string {
+    this.pin = this.generatePin();
+    return this.pin;
+  }
+
+  private generatePin(): string {
+    return String(Math.floor(10000000 + Math.random() * 90000000));
+  }
+
   /** Port of the 127.0.0.1 status server (serves the Mobile Access UI + /status). */
   get mobileUiPort(): number | null {
     return this.statusPort;
@@ -317,9 +432,15 @@ export class MobileAccessService {
     this.statusPort = this.statusServer.port ?? null;
     info(`mobile access: status server on 127.0.0.1:${this.statusPort}`);
 
-    this.proxy = await listenOnPort(MOBILE_PROXY_BASE_PORT, 10, (port) => createProxy(dshPort, process.platform, port));
+    this.proxy = await listenOnPort(MOBILE_PROXY_BASE_PORT, 10, (port) =>
+      createProxy(dshPort, process.platform, port, () => this.pin),
+    );
     this.proxyPort = this.proxy.port ?? null;
     info(`mobile access: LAN proxy on 0.0.0.0:${this.proxyPort} -> 127.0.0.1:${dshPort}`);
+
+    // Fresh 8-digit PIN per session: the phone needs it for public (IPv6/tunnel) access.
+    this.pin = this.generatePin();
+    info(`mobile access: public PIN ready (shown in the Mobile Access UI)`);
 
     // Re-open the public tunnel after a shell restart if it was on before.
     void this.restoreTunnelIfNeeded();
@@ -435,7 +556,8 @@ export class MobileAccessService {
         phase: this.tunnelPhase,
         detail: this.tunnelDetail,
       },
-      pinEnabled: false,
+      pinEnabled: this.pin !== null,
+      pin: this.pin,
     };
   }
 
