@@ -142,6 +142,7 @@ export function makeSpec(dir: string): BackendSpec {
         "web",
         "--port",
         "0",
+        "--no-open", // the shell shows the GUI in its own window; don't pop a browser
       ],
       cwd: dir,
       kind: "source",
@@ -149,7 +150,7 @@ export function makeSpec(dir: string): BackendSpec {
   }
   return {
     node: nodeBin(),
-    args: ["--expose-internals", BUNDLED_BACKEND_ENTRY, "web", "--port", "0"],
+    args: ["--expose-internals", BUNDLED_BACKEND_ENTRY, "web", "--port", "0", "--no-open"],
     cwd: dir,
     kind: "bundled",
   };
@@ -167,7 +168,7 @@ export function resolveBackendSpec(): BackendSpec {
   info("backend: no bundled, user-data, or checkout backend found; falling back to npx @deepseek-ai/dsh");
   return {
     node: "npx",
-    args: ["--yes", "@deepseek-ai/dsh", "web", "--port", "0"],
+    args: ["--yes", "@deepseek-ai/dsh", "web", "--port", "0", "--no-open"],
     cwd: process.cwd(),
     kind: "external",
   };
