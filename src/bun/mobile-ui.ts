@@ -51,7 +51,7 @@ export function mobileUiHtml(): string {
     <h2>公网（人在外面）<span class="pill" id="pubPill">…</span></h2>
     <div class="qrwrap" id="pubQr"><div class="status">公网访问将在下一阶段开放</div></div>
     <div class="url" id="pubUrl"></div>
-    <button class="btn off" id="pubBtn" disabled>开启公网（Phase 2）</button>
+    <button class="btn off" id="pubBtn">开启公网</button>
     <div class="status" id="pubState"></div>
   </div>
 
@@ -91,13 +91,19 @@ export function mobileUiHtml(): string {
     else $('lanQr').innerHTML = '<div class="status">代理未运行</div>';
     $('lanCopy').disabled = !data.lanUrl;
 
-    // Public (Phase 2 placeholder)
+    // Public (cloudflared tunnel)
     var t = data.tunnel || {};
     var pubUrl = t.url || '';
     setText('pubUrl', pubUrl);
     $('pubPill').textContent = t.running ? '运行中' : '关闭';
     $('pubPill').className = 'pill ' + (t.running ? 'on' : 'off');
     if (pubUrl) renderQr($('pubQr'), pubUrl);
+    else $('pubQr').innerHTML = '<div class="status">未开启</div>';
+    var busy = t.phase === 'starting' || t.phase === 'downloading' || t.phase === 'registering';
+    var btn = $('pubBtn');
+    btn.disabled = busy;
+    btn.textContent = t.running ? '关闭公网' : (busy ? '开启中…' : '开启公网');
+    btn.className = 'btn' + (t.running ? '' : ' off');
     var st = t.phase === 'idle' ? '' : (t.detail || t.phase);
     var cls = t.phase === 'error' ? 'err' : (t.phase === 'ready' ? 'ok' : '');
     $('pubState').textContent = st;
@@ -120,6 +126,26 @@ export function mobileUiHtml(): string {
     var b = this; var old = b.textContent;
     b.textContent = '已复制 ✓';
     setTimeout(function () { b.textContent = old; }, 1200);
+  });
+
+  $('pubBtn').addEventListener('click', function () {
+    var b = this;
+    if (b.disabled) return;
+    var turningOn = b.textContent.indexOf('开启') === 0;
+    fetch(turningOn ? '/tunnel/start' : '/tunnel/stop', { method: 'POST', cache: 'no-store' })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (j) {
+        if (j && j.error) {
+          $('pubState').textContent = '出错：' + j.error;
+          $('pubState').className = 'status err';
+        } else {
+          poll();
+        }
+      })
+      .catch(function (e) {
+        $('pubState').textContent = '请求失败：' + e;
+        $('pubState').className = 'status err';
+      });
   });
 
   poll();

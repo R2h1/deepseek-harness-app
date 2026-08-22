@@ -19,11 +19,12 @@
  */
 
 import { networkInterfaces } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Server } from "bun";
 
-import { info, warn } from "./logger";
+import { info, warn, userDataDir } from "./logger";
+import { startQuickTunnel, type QuickTunnel } from "./tunnel";
 import { mobileUiHtml } from "./mobile-ui";
 
 export const MOBILE_PROXY_BASE_PORT = 3081;
@@ -234,12 +235,16 @@ function createStatusServer(service: MobileAccessService, port: number): Server<
           headers: { "content-type": "application/javascript", "cache-control": "public, max-age=3600" },
         });
       }
-      // Phase 2: /tunnel/start, /tunnel/stop
+      // Public tunnel control (Phase 2).
       if (req.method === "POST" && url.pathname === "/tunnel/start") {
-        return Response.json({ error: "public tunnel is not implemented yet (Phase 2)" }, { status: 501 });
+        return service
+          .startTunnel()
+          .then((url) => Response.json({ url }))
+          .catch((err) => Response.json({ error: String(err) }, { status: 500 }));
       }
       if (req.method === "POST" && url.pathname === "/tunnel/stop") {
-        return Response.json({ error: "public tunnel is not implemented yet (Phase 2)" }, { status: 501 });
+        service.stopTunnel();
+        return Response.json({ ok: true });
       }
       return new Response("not found", { status: 404 });
     },
@@ -282,6 +287,19 @@ export class MobileAccessService {
   private statusPort: number | null = null;
   private dshPort: number | null = null;
 
+  private tunnel: QuickTunnel | null = null;
+  private tunnelPhase = "idle";
+  private tunnelDetail = "";
+  private tunnelPromise: Promise<string> | null = null;
+  private tunnelAbort: AbortController | null = null;
+
+  private get tunnelCacheDir(): string {
+    return join(userDataDir(), "cloudflared");
+  }
+  private get tunnelAutoPath(): string {
+    return join(this.tunnelCacheDir, "tunnel-auto.json");
+  }
+
   /** Port of the 127.0.0.1 status server (serves the Mobile Access UI + /status). */
   get mobileUiPort(): number | null {
     return this.statusPort;
@@ -303,7 +321,97 @@ export class MobileAccessService {
     this.proxyPort = this.proxy.port ?? null;
     info(`mobile access: LAN proxy on 0.0.0.0:${this.proxyPort} -> 127.0.0.1:${dshPort}`);
 
+    // Re-open the public tunnel after a shell restart if it was on before.
+    void this.restoreTunnelIfNeeded();
+
     return { proxyPort: this.proxyPort!, statusPort: this.statusPort! };
+  }
+
+  /** Start the public cloudflared tunnel (idempotent, single-flight). Returns the public URL. */
+  async startTunnel(): Promise<string> {
+    if (this.tunnel) return this.tunnel.url;
+    if (this.tunnelPromise) return this.tunnelPromise;
+    if (!this.proxyPort) throw new Error("LAN proxy is not running");
+
+    const controller = new AbortController();
+    this.tunnelAbort = controller;
+    this.tunnelPhase = "starting";
+    const holder: { p: Promise<string> | null } = { p: null };
+    holder.p = (async () => {
+      try {
+        const t = await startQuickTunnel(this.proxyPort!, this.tunnelCacheDir, controller.signal, (phase) => {
+          this.tunnelPhase = phase;
+          this.tunnelDetail =
+            phase === "downloading"
+              ? "正在下载 cloudflared（约 50MB）…"
+              : phase === "starting"
+                ? "正在启动隧道…"
+                : phase === "registering"
+                  ? "正在连接 Cloudflare 边缘…"
+                  : "";
+        });
+        this.tunnel = t;
+        this.tunnelPhase = "ready";
+        t.onExit((code) => {
+          if (controller.signal.aborted) return;
+          this.tunnelPhase = "error";
+          this.tunnelDetail = `隧道进程退出（code ${code}）`;
+        });
+        this.persistAutoTunnel(true);
+        return t.url;
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          this.tunnelPhase = "error";
+          this.tunnelDetail = String(err);
+        }
+        throw err;
+      } finally {
+        if (this.tunnelPromise === holder.p) this.tunnelPromise = null;
+      }
+    })();
+    this.tunnelPromise = holder.p;
+    return holder.p;
+  }
+
+  stopTunnel(): void {
+    this.tunnelAbort?.abort();
+    this.tunnelAbort = null;
+    this.tunnelPromise = null;
+    if (this.tunnel) this.tunnel.kill();
+    this.tunnel = null;
+    this.tunnelPhase = "idle";
+    this.tunnelDetail = "";
+    this.persistAutoTunnel(false);
+  }
+
+  /** After a shell restart, re-open the public tunnel if it was on before. */
+  async restoreTunnelIfNeeded(): Promise<void> {
+    if (this.tunnel || this.tunnelPromise) return;
+    try {
+      const raw = readFileSync(this.tunnelAutoPath, "utf8");
+      if (!/"at"\s*:/.test(raw)) return;
+    } catch {
+      return;
+    }
+    try {
+      await this.startTunnel();
+      info("mobile access: public tunnel auto-restored");
+    } catch (err) {
+      warn(`mobile access: tunnel auto-restore failed: ${String(err)}`);
+    }
+  }
+
+  private persistAutoTunnel(on: boolean): void {
+    try {
+      if (on) {
+        mkdirSync(this.tunnelCacheDir, { recursive: true });
+        writeFileSync(this.tunnelAutoPath, JSON.stringify({ at: Date.now() }), "utf8");
+      } else {
+        rmSync(this.tunnelAutoPath, { force: true });
+      }
+    } catch {
+      // best-effort
+    }
   }
 
   status(): MobileStatus {
@@ -314,12 +422,18 @@ export class MobileAccessService {
       statusPort: this.statusPort,
       lanUrl: lan && this.proxyPort ? `http://${lan}:${this.proxyPort}` : null,
       dshPort: this.dshPort,
-      tunnel: { running: false, url: null, phase: "idle", detail: "" },
+      tunnel: {
+        running: this.tunnel !== null,
+        url: this.tunnel?.url ?? null,
+        phase: this.tunnelPhase,
+        detail: this.tunnelDetail,
+      },
       pinEnabled: false,
     };
   }
 
   async dispose(): Promise<void> {
+    this.stopTunnel();
     if (this.proxy) {
       try { this.proxy.stop(true); } catch (err) { warn(`mobile proxy stop: ${String(err)}`); }
       this.proxy = null;

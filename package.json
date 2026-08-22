@@ -15,6 +15,7 @@
     "publish:release": "node scripts/publish-release.mjs",
     "test:mobile": "bun scripts/test-mobile.ts",
     "test:mobile:real": "bun scripts/test-mobile-real.ts",
+    "test:tunnel": "bun scripts/test-tunnel.ts",
     "gen:icons": "bun scripts/gen-icons.mjs",
     "backend:provision": "node scripts/provision-backend.mjs",
     "backend:pin": "node scripts/provision-backend.mjs --version",
