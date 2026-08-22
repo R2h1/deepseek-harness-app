@@ -14,6 +14,7 @@ import { info, warn, error } from "./logger";
 import {
   appCodeDir,
   consumeLines,
+  killProcessTree,
   nodeBin,
   userDataBackendDir,
 } from "./backend";
@@ -66,6 +67,32 @@ export async function queryNpmLatest(): Promise<string | null> {
     warn(`update check: ${String(err)}`);
     return null;
   }
+}
+
+/**
+ * Await a child's exit with a hard timeout. pnpm can print "Done" yet keep a
+ * postinstall child alive (native builds such as node-pty/koffi download binaries
+ * and can hang on flaky networks), which would otherwise block boot forever.
+ * Returns the exit code, or null when the timeout fired (the tree is killed).
+ */
+async function waitWithTimeout(proc: Bun.Subprocess, ms: number, what: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (code: number | null): void => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(code);
+      }
+    };
+    const timer = setTimeout(() => {
+      warn(`runtime update: ${what} hung for ${ms}ms — killing its process tree`);
+      void killProcessTree(proc)
+        .then(() => finish(proc.exitCode ?? 1))
+        .catch(() => finish(1));
+    }, ms);
+    proc.exited.then((code) => finish(code), () => finish(1));
+  });
 }
 
 /**
@@ -122,9 +149,11 @@ export async function installBackend(
       });
     }
 
-    const code = await proc.exited;
+    // Hard timeout: a hung postinstall must not block boot forever.
+    const installMs = Number(process.env.DSH_DESKTOP_UPDATE_TIMEOUT_MS ?? 600_000);
+    const code = await waitWithTimeout(proc, installMs, "pnpm install");
     if (code !== 0) {
-      error(`runtime update: pnpm install exited with code ${code}`);
+      error(`runtime update: pnpm install failed (exit ${code})`);
       return false;
     }
 
@@ -138,7 +167,7 @@ export async function installBackend(
         stderr: "ignore",
         env: process.env,
       });
-      const trimCode = await trim.exited;
+      const trimCode = await waitWithTimeout(trim, 120_000, "backend trim");
       if (trimCode !== 0) {
         warn(`runtime update: backend trim exited with code ${trimCode}`);
       }
