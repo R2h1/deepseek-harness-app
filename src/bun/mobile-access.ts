@@ -373,7 +373,9 @@ export class MobileAccessService {
     return holder.p;
   }
 
-  stopTunnel(): void {
+  /** Kill the tunnel process + reset state, but KEEP the auto-restore flag
+   *  (used on teardown/restart so the tunnel comes back on the next boot). */
+  private killTunnel(): void {
     this.tunnelAbort?.abort();
     this.tunnelAbort = null;
     this.tunnelPromise = null;
@@ -381,6 +383,11 @@ export class MobileAccessService {
     this.tunnel = null;
     this.tunnelPhase = "idle";
     this.tunnelDetail = "";
+  }
+
+  /** Explicitly turn public access off (also clears the auto-restore flag). */
+  stopTunnel(): void {
+    this.killTunnel();
     this.persistAutoTunnel(false);
   }
 
@@ -433,7 +440,7 @@ export class MobileAccessService {
   }
 
   async dispose(): Promise<void> {
-    this.stopTunnel();
+    this.killTunnel(); // keep the auto-restore flag so public access survives restart
     if (this.proxy) {
       try { this.proxy.stop(true); } catch (err) { warn(`mobile proxy stop: ${String(err)}`); }
       this.proxy = null;
