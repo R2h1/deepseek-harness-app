@@ -52,23 +52,16 @@ export function mobileUiHtml(): string {
   </div>
 
   <div class="card">
-    <h2>公网 / IPv6（人在外面，免服务器）<span class="pill" id="ipv6Pill">…</span></h2>
-    <div class="qrwrap" id="ipv6Qr"><div class="status">未检测到 IPv6</div></div>
-    <div class="url" id="ipv6Url"></div>
-    <button class="btn" id="ipv6Copy">复制 IPv6 地址</button>
+    <h2>公网隧道（cloudflared，人在外面）<span class="pill" id="pubPill">…</span></h2>
+    <div class="qrwrap" id="pubQr"><div class="status">未开启</div></div>
+    <div class="url" id="pubUrl"></div>
     <div class="pinrow" id="pinRow" style="display:none">
       <span>访问 PIN：</span><b id="pinVal"></b>
       <button class="linkbtn" id="pinRotate">重新生成</button>
     </div>
-    <div class="warn">🔒 公网/IPv6 访问需要输入上面的 8 位 PIN（局域网 WiFi 免密）。PIN 就是钥匙——不要泄露。</div>
-  </div>
-
-  <div class="card">
-    <h2>公网隧道（cloudflared）<span class="pill" id="pubPill">…</span></h2>
-    <div class="qrwrap" id="pubQr"><div class="status">未开启</div></div>
-    <div class="url" id="pubUrl"></div>
     <button class="btn off" id="pubBtn">开启公网</button>
     <div class="status" id="pubState"></div>
+    <div class="warn">🔒 公网隧道访问需要输入上面的 8 位 PIN（局域网 WiFi 免密）。PIN 就是钥匙——不要泄露。</div>
   </div>
 
   <div class="warn">⚠️ 二维码和链接就是钥匙——<b>不要发给任何人</b>。它可以让对方直接操作你电脑上的 Harness（可执行代码）。同一 WiFi 下任何拿到链接的设备都能进入；关闭应用即停止访问。</div>
@@ -125,19 +118,10 @@ export function mobileUiHtml(): string {
     $('pubState').textContent = st;
     $('pubState').className = 'status ' + cls;
 
-    // PIN (public access gate)
+    // PIN (public tunnel gate)
     var pin = data.pin && data.pinEnabled ? data.pin : null;
     $('pinRow').style.display = pin ? 'flex' : 'none';
     if (pin) $('pinVal').textContent = pin;
-
-    // IPv6 public (self-hosted, PIN-gated)
-    var ipv6 = data.ipv6Url || '';
-    setText('ipv6Url', ipv6);
-    $('ipv6Pill').textContent = ipv6 ? '可访问' : '无 IPv6';
-    $('ipv6Pill').className = 'pill ' + (ipv6 ? 'on' : 'off');
-    if (ipv6) renderQr($('ipv6Qr'), ipv6);
-    else $('ipv6Qr').innerHTML = '<div class="status">未检测到公网 IPv6（4G 测试需要它）</div>';
-    $('ipv6Copy').disabled = !ipv6;
   }
 
   function poll() {
@@ -154,15 +138,6 @@ export function mobileUiHtml(): string {
       .then(function (r) { return r.json(); })
       .then(function (j) { if (j && j.pin) $('pinVal').textContent = j.pin; })
       .catch(function () { /* best-effort */ });
-  });
-
-  $('ipv6Copy').addEventListener('click', function () {
-    var url = $('ipv6Url').textContent;
-    if (!url) return;
-    if (navigator.clipboard) navigator.clipboard.writeText(url);
-    var b = this; var old = b.textContent;
-    b.textContent = '已复制 ✓';
-    setTimeout(function () { b.textContent = old; }, 1200);
   });
 
   $('lanCopy').addEventListener('click', function () {
