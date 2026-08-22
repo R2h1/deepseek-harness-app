@@ -232,8 +232,33 @@ const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const tag = versionToTag(opts.version || pkg.version);
 const repo = getRepo(opts.repo);
 
-const defaultNotes = `## deepseek-harness-app ${tag}
+/** The latest release tag before this one (for the changelog range), if any. */
+function previousTag() {
+  try {
+    const tags = runSync("git", ["tag", "--sort=-v:refname"]).split("\n").filter(Boolean);
+    return tags.find((t) => t !== tag) ?? null;
+  } catch {
+    return null;
+  }
+}
 
+/** Commit subjects between the previous tag and HEAD (one per line). */
+function changelog(from) {
+  if (!from) return [];
+  try {
+    const out = runSync("git", ["log", "--oneline", "--no-merges", `${from}..HEAD`]);
+    return out.split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const defaultNotes = (() => {
+  const changes = changelog(previousTag());
+  const changeSection = changes.length
+    ? `\n### 变更 / Changes\n${changes.map((c) => `- ${c}`).join("\n")}\n`
+    : "";
+  return `## dsh-app ${tag}${changeSection}
 ### 简体中文
 
 Windows 桌面版安装包（ElectroBun 外壳 + DeepSeek Harness Web GUI）。
@@ -262,8 +287,9 @@ Windows desktop installer (ElectroBun shell + DeepSeek Harness Web GUI).
 - Installer upgraded to NSIS 3.x (Unicode) with a Simplified-Chinese UI: per-user install, desktop/Start Menu shortcuts, uninstall entry
 - Installer section names kept in English to avoid false positives from security software (verified under Lenovo/Huorong and AlibabaProtect)
 `;
+})();
 const releaseBody = opts.notes ? readFileSync(opts.notes, "utf8") : defaultNotes;
-const title = `deepseek-harness-app ${tag}`;
+const title = `dsh-app ${tag}`;
 
 log("PLAN", [
   `repo      : ${repo}`,
