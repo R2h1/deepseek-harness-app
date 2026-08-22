@@ -80,6 +80,19 @@ function lanIPv4(): string | null {
   return selectLanIPv4(networkInterfaces() as unknown as LanInterfaces);
 }
 
+/** First global IPv6 (the machine is directly reachable on it — no NAT for IPv6). */
+function lanIPv6(): string | null {
+  for (const addrs of Object.values(networkInterfaces() ?? {})) {
+    for (const addr of addrs ?? []) {
+      const ip = addr.address;
+      if (addr.family !== "IPv6" || addr.internal) continue;
+      if (!ip || ip.startsWith("fe80:") || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("::")) continue;
+      return ip;
+    }
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 /* HTML injection                                                      */
 /* ------------------------------------------------------------------ */
@@ -373,6 +386,7 @@ export interface MobileStatus {
   proxyPort: number | null;
   statusPort: number | null;
   lanUrl: string | null;
+  ipv6Url: string | null;
   dshPort: number | null;
   tunnel: { running: boolean; url: string | null; phase: string; detail: string };
   pinEnabled: boolean;
@@ -544,11 +558,13 @@ export class MobileAccessService {
 
   status(): MobileStatus {
     const lan = lanIPv4();
+    const ipv6 = lanIPv6();
     return {
       proxyRunning: this.proxy !== null,
       proxyPort: this.proxyPort,
       statusPort: this.statusPort,
       lanUrl: lan && this.proxyPort ? `http://${lan}:${this.proxyPort}` : null,
+      ipv6Url: ipv6 && this.proxyPort ? `http://[${ipv6}]:${this.proxyPort}` : null,
       dshPort: this.dshPort,
       tunnel: {
         running: this.tunnel !== null,
