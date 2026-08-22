@@ -33,17 +33,22 @@ import {
 } from "./backend";
 import { installBackend, queryNpmLatest } from "./updater";
 import { errorHtml, loaderHtml } from "./loader-ui";
+import { MobileAccessService } from "./mobile-access";
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 800;
 const READY_TIMEOUT_MS = 120_000;
 
 let mainWindow: BrowserWindow | null = null;
+let mobileWindow: BrowserWindow | null = null;
 let backendProc: Bun.Subprocess | null = null;
 let backendUrl: string | null = null;
 let quitting = false;
 let trayAvailable = false;
 let notifiedCloseToTray = false;
+
+/** First-party "phone access": LAN proxy + status server, run entirely in the shell. */
+const mobileAccess = new MobileAccessService();
 
 /** App version, read from the bundle's version.json (dev falls back to a constant). */
 function appVersion(): string {
@@ -141,6 +146,51 @@ function openGui(url: string): void {
   win.webview.loadURL(url);
   win.setTitle("DeepSeek Harness");
   info(`GUI loaded at ${url}`);
+  // Mobile access: expose the engine on the LAN via a shell-side proxy.
+  try {
+    const port = Number(new URL(url).port);
+    if (port > 0) void mobileAccess.start(port);
+  } catch (err) {
+    warn(`mobile access start: ${String(err)}`);
+  }
+}
+
+const MOBILE_WINDOW_WIDTH = 400;
+const MOBILE_WINDOW_HEIGHT = 700;
+
+/** Open (or bring back) the "Mobile Access" window — a small phone-style window
+ *  served by the shell's status server. */
+function openMobileWindow(): void {
+  const port = mobileAccess.mobileUiPort;
+  if (!port) {
+    warn("mobile access: engine not ready yet");
+    return;
+  }
+  if (mobileWindow) {
+    mobileWindow.show();
+    mobileWindow.activate();
+    return;
+  }
+  let frame = { x: 0, y: 0, width: MOBILE_WINDOW_WIDTH, height: MOBILE_WINDOW_HEIGHT };
+  try {
+    const work = Screen.getPrimaryDisplay().workArea;
+    frame.x = work.x + Math.floor((work.width - MOBILE_WINDOW_WIDTH) / 2);
+    frame.y = work.y + Math.floor((work.height - MOBILE_WINDOW_HEIGHT) / 2);
+  } catch {
+    // keep top-left default
+  }
+  const win = new BrowserWindow({
+    title: "Mobile Access · 手机访问",
+    frame,
+    url: `http://127.0.0.1:${port}/mobile`,
+    html: null,
+    sandbox: true,
+  });
+  mobileWindow = win;
+  win.on("close", () => {
+    mobileWindow = null;
+  });
+  win.show();
 }
 
 /** The tray icon path: bundled app asset first, project asset in dev. Windows
@@ -249,6 +299,7 @@ function shutdownAndQuit(): void {
   if (quitting) return;
   quitting = true;
   info("quitting: tearing down backend");
+  void mobileAccess.dispose().catch(() => {});
   void stopBackend().finally(() => Utils.quit());
 }
 
@@ -285,6 +336,7 @@ function setupTray(): void {
     { type: "normal", label: "Open DeepSeek Harness", action: "show" },
     { type: "divider" },
     { type: "normal", label: "Open in Browser", action: "open-browser" },
+    { type: "normal", label: "Mobile Access", action: "mobile-access" },
     { type: "normal", label: "Restart Engine", action: "restart" },
     { type: "normal", label: "Check for Updates", action: "update-engine" },
     { type: "divider" },
@@ -304,6 +356,9 @@ function setupTray(): void {
         } else {
           warn("tray open-browser: backend not ready yet");
         }
+        break;
+      case "mobile-access":
+        openMobileWindow();
         break;
       case "restart":
         void restartBackend();

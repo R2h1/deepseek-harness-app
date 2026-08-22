@@ -27,6 +27,8 @@ export default {
       // Tray icon (PNG for macOS, ICO for Windows) and app icon (Windows).
       "resources/icons/tray.png": "tray.png",
       "resources/icons/tray.ico": "tray.ico",
+      // Mobile Access UI assets (vendored MIT QR library).
+      "resources/mobile": "mobile",
       // The backend trim script, so runtime-installed backends get pruned too.
       "scripts/trim-node-modules.mjs": "trim-node-modules.mjs",
     },
