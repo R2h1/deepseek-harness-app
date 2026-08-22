@@ -14,7 +14,7 @@
  * Requires NSIS. Point DSHP_NSIS_MAKENSIS at makensis.exe, or have it on PATH.
  */
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
