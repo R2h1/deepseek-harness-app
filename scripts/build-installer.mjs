@@ -88,11 +88,24 @@ const rceditCandidates = [
 ];
 const rcedit = rceditCandidates.find((c) => c && existsSync(c));
 const appIcon = join(root, "resources", "icons", "app.ico");
+const appVersion = (JSON.parse(readFileSync(join(root, "package.json"), "utf8"))).version ?? "0.1.0";
 if (rcedit) {
   for (const rel of ["bin/launcher.exe", "bin/bun.exe"]) {
     const target = join(stagingDir, rel);
     if (existsSync(target)) {
-      run(`"${rcedit}" "${target}" --set-icon "${appIcon}"`, root);
+      // Embed the app icon AND the app identity. Without the version strings,
+      // Windows shows "Bun" as the taskbar / Alt-Tab / right-click app name (the
+      // window is owned by bun.exe, and Windows derives the name from its PE
+      // version resource).
+      run(
+        `"${rcedit}" "${target}" --set-icon "${appIcon}"` +
+          ` --set-file-version "${appVersion}" --set-product-version "${appVersion}"` +
+          ` --set-version-string "ProductName" "DeepSeek Harness"` +
+          ` --set-version-string "FileDescription" "DeepSeek Harness"` +
+          ` --set-version-string "CompanyName" "DeepSeek"` +
+          ` --set-version-string "OriginalFilename" "${rel}"`,
+        root,
+      );
     }
   }
 } else {

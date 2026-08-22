@@ -155,8 +155,8 @@ function openGui(url: string): void {
   }
 }
 
-const MOBILE_WINDOW_WIDTH = 400;
-const MOBILE_WINDOW_HEIGHT = 700;
+const MOBILE_WINDOW_WIDTH = 480;
+const MOBILE_WINDOW_HEIGHT = 720;
 
 /** Open (or bring back) the "Mobile Access" window — a small phone-style window
  *  served by the shell's status server. */

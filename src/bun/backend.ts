@@ -221,12 +221,43 @@ export async function consumeLines(
   }
 }
 
-/** Terminate the backend process tree (taskkill /T on Windows, SIGTERM elsewhere). */
+/** Unix: how long to wait for the engine to exit after SIGTERM before force-killing. */
+const GRACEFUL_SHUTDOWN_WAIT_MS = 2000;
+/** Windows: the engine's session write-behind batches at ~200ms; give it a beat to
+ *  flush before the force kill so a torn/duplicated write can't corrupt a session. */
+const WINDOWS_FLUSH_GRACE_MS = 600;
+
+/**
+ * Stop the backend process tree. On Unix this sends SIGTERM and waits for a graceful
+ * exit (the engine flushes sessions on the way out). On Windows there is no reliable
+ * graceful signal for a console-less Node child, so we wait a short flush grace and
+ * then force-kill the tree — never killing mid-write, which can corrupt session logs.
+ */
 export async function killProcessTree(proc: Bun.Subprocess): Promise<void> {
   const pid = proc.pid;
+  if (pid) info(`backend: stopping process tree pid=${pid}`);
+
+  if (process.platform !== "win32") {
+    // Graceful: SIGTERM, then wait for a clean exit.
+    try {
+      proc.kill();
+    } catch {
+      // already gone
+    }
+    const exited = await Promise.race([
+      proc.exited.then(() => true, () => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), GRACEFUL_SHUTDOWN_WAIT_MS)),
+    ]);
+    if (exited) return;
+    info(`backend: still alive after ${GRACEFUL_SHUTDOWN_WAIT_MS}ms — force killing`);
+  } else if (pid) {
+    // Windows: let pending session writes flush before the force kill.
+    await new Promise((resolve) => setTimeout(resolve, WINDOWS_FLUSH_GRACE_MS));
+  }
+
+  // Force-kill the process tree.
   if (process.platform === "win32" && pid) {
     try {
-      info(`backend: killing process tree pid=${pid}`);
       await Bun.spawn(["taskkill", "/PID", String(pid), "/T", "/F"], {
         stdout: "ignore",
         stderr: "ignore",

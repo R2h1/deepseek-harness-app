@@ -13,7 +13,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { userDataDir } from "./logger";
 
-const WINDOWS_MUTEX_NAME = "Global\\DSHDesktop.SingleInstance";
+/**
+ * Windows named mutex for the single-instance guard. Uses the `Local\` namespace:
+ * it is per-login-session and — unlike `Global\` — a non-elevated process can
+ * open it, so an elevated instance and a normal-user instance of the app see the
+ * same lock. (With `Global\` + fail-open, a normal-user copy couldn't open the
+ * elevated instance's mutex and would run anyway → two engines writing the same
+ * session → corruption.)
+ */
+const WINDOWS_MUTEX_NAME = "Local\\DSHDesktop.SingleInstance";
 const ERROR_ALREADY_EXISTS = 183;
 const PID_LOCK_FILENAME = "single-instance.pid";
 
