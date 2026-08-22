@@ -35,8 +35,8 @@ import { installBackend, queryNpmLatest } from "./updater";
 import { errorHtml, loaderHtml } from "./loader-ui";
 import { MobileAccessService } from "./mobile-access";
 
-const WINDOW_WIDTH = 1440;
-const WINDOW_HEIGHT = 900;
+const WINDOW_WIDTH = 1600;
+const WINDOW_HEIGHT = 920;
 const READY_TIMEOUT_MS = 120_000;
 
 let mainWindow: BrowserWindow | null = null;
