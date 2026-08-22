@@ -155,7 +155,7 @@ function openGui(url: string): void {
   }
 }
 
-const MOBILE_WINDOW_WIDTH = 480;
+const MOBILE_WINDOW_WIDTH = 560;
 const MOBILE_WINDOW_HEIGHT = 720;
 
 /** Open (or bring back) the "Mobile Access" window — a small phone-style window
@@ -286,6 +286,27 @@ function setupWindowIcon(): void {
     }
   } catch (err) {
     warn(`window icon: ${String(err)}`);
+  }
+}
+
+/**
+ * Set the process AppUserModelID so the taskbar/right-click app name is
+ * "DeepSeek Harness" instead of the exe's default ("Bun"). The exe version
+ * strings are already set at build time; pinning the AUMID removes any
+ * taskbar identity ambiguity (e.g. a cached "Bun" identity for bun.exe).
+ */
+function setAppUserModelId(): void {
+  if (process.platform !== "win32") return;
+  try {
+    const shell32 = dlopen("shell32.dll", {
+      SetCurrentProcessExplicitAppUserModelID: { args: [FFIType.ptr], returns: FFIType.i32 },
+    });
+    const appId = "ai.deepseek.dsh-desktop";
+    shell32.symbols.SetCurrentProcessExplicitAppUserModelID(
+      Buffer.from(`${appId}\0`, "utf16le") as unknown as Pointer,
+    );
+  } catch (err) {
+    warn(`app id: ${String(err)}`);
   }
 }
 
@@ -442,6 +463,7 @@ function main(): void {
     process.exit(0);
   }
 
+  setAppUserModelId();
   info(`=== DeepSeek Harness desktop ${appVersion()} starting (pid ${process.pid}) ===`);
   setupTray();
   void boot();
