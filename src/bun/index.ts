@@ -36,7 +36,7 @@ import { errorHtml, loaderHtml } from "./loader-ui";
 import { MobileAccessService } from "./mobile-access";
 
 const WINDOW_WIDTH = 1600;
-const WINDOW_HEIGHT = 920;
+const WINDOW_HEIGHT = 1200;
 const READY_TIMEOUT_MS = 120_000;
 
 let mainWindow: BrowserWindow | null = null;
